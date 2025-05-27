@@ -13,8 +13,6 @@ interface AIMetadata {
   tags: string[];
   category: string;
   confidence: number;
-  extractedText?: string;
-  language?: string;
 }
 
 interface UserFile {
@@ -755,19 +753,6 @@ export default function Home() {
                       </button>
                     </div>
                   </div>
-
-                  {file.aiMetadata.extractedText && (
-                    <div className="mt-4 pt-4 border-t border-gray-200">
-                      <details className="group">
-                        <summary className="cursor-pointer text-sm font-medium text-gray-700 hover:text-gray-900">
-                          Extracted Text Preview
-                        </summary>
-                        <div className="mt-2 p-3 bg-gray-50 rounded text-sm text-gray-600 max-h-32 overflow-y-auto">
-                          {file.aiMetadata.extractedText}
-                        </div>
-                      </details>
-                    </div>
-                  )}
                 </div>
               ))}
             </div>

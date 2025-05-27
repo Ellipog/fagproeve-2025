@@ -15,8 +15,6 @@ export interface IFile extends Document {
     tags: string[];
     category: string;
     confidence: number;
-    extractedText?: string;
-    language?: string;
   };
   uploadedAt: Date;
 }
@@ -72,12 +70,6 @@ const fileSchema = new Schema<IFile>(
         min: 0,
         max: 1,
         required: true,
-      },
-      extractedText: {
-        type: String,
-      },
-      language: {
-        type: String,
       },
     },
     uploadedAt: {
