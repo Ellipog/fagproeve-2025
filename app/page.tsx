@@ -163,7 +163,7 @@ export default function Home() {
       } else {
         setAuthError(data.error || "Authentication failed");
       }
-    } catch (error) {
+    } catch {
       setAuthError("Network error. Please try again.");
     } finally {
       setAuthLoading(false);
@@ -308,8 +308,8 @@ export default function Home() {
       } else {
         setError(result.error || "Upload failed");
       }
-    } catch (error) {
-      console.error("Upload error:", error);
+    } catch (uploadError) {
+      console.error("Upload error:", uploadError);
       setError("Failed to upload files. Please try again.");
     } finally {
       setUploading(false);
