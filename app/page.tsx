@@ -37,6 +37,17 @@ interface AuthResponse {
   details?: string[];
 }
 
+interface UploadResult {
+  id: string;
+  originalName: string;
+  fileName: string;
+  s3Key: string;
+  size: number;
+  type: string;
+  aiMetadata: AIMetadata;
+  uploadedAt: string;
+}
+
 export default function Home() {
   // Authentication state
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -54,7 +65,7 @@ export default function Home() {
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
   const [error, setError] = useState<string>("");
   const [uploading, setUploading] = useState(false);
-  const [uploadResults, setUploadResults] = useState<any[]>([]);
+  const [uploadResults, setUploadResults] = useState<UploadResult[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // User files state

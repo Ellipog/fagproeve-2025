@@ -6,9 +6,12 @@ import { generatePresignedUrl } from "@/app/utils/s3";
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Await params before using
+    const { id } = await params;
+
     // Verify authentication
     const authHeader = request.headers.get("authorization");
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -29,7 +32,7 @@ export async function GET(
 
     // Find the file and verify ownership
     const file = await File.findOne({
-      _id: params.id,
+      _id: id,
       userId: decoded.userId,
     });
 

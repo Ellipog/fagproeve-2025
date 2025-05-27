@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
       },
       { status: 200 }
     );
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Login error:", error);
     return NextResponse.json(
       { error: "Internal server error" },

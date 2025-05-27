@@ -72,12 +72,23 @@ export async function POST(request: NextRequest) {
       },
       { status: 201 }
     );
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Signup error:", error);
 
     // Handle mongoose validation errors
-    if (error.name === "ValidationError") {
-      const errors = Object.values(error.errors).map((err: any) => err.message);
+    if (
+      error &&
+      typeof error === "object" &&
+      "name" in error &&
+      error.name === "ValidationError" &&
+      "errors" in error
+    ) {
+      const mongooseError = error as unknown as {
+        errors: Record<string, { message: string }>;
+      };
+      const errors = Object.values(mongooseError.errors).map(
+        (err) => err.message
+      );
       return NextResponse.json(
         { error: "Validation failed", details: errors },
         { status: 400 }
@@ -85,7 +96,12 @@ export async function POST(request: NextRequest) {
     }
 
     // Handle duplicate key errors
-    if (error.code === 11000) {
+    if (
+      error &&
+      typeof error === "object" &&
+      "code" in error &&
+      error.code === 11000
+    ) {
       return NextResponse.json(
         { error: "An account with this email already exists" },
         { status: 409 }

@@ -51,8 +51,8 @@ userSchema.pre("save", async function (next) {
     const salt = await bcrypt.genSalt(12);
     user.password = await bcrypt.hash(user.password, salt);
     next();
-  } catch (error: any) {
-    next(error);
+  } catch (error: unknown) {
+    next(error instanceof Error ? error : new Error("Password hashing failed"));
   }
 });
 
