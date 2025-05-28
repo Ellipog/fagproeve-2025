@@ -4,15 +4,18 @@ import { verifyToken } from "@/app/lib/auth";
 import connectDB from "@/app/lib/mongodb";
 import File from "@/app/models/File";
 import { generateDummyAIMetadata } from "@/app/utils/aiMetadata";
+import { analyzeDocument } from "@/app/lib/aiService";
 
 // Accepted file types and their MIME types
 const acceptedTypes = {
   "application/pdf": [".pdf"],
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [
-    ".docx",
-  ],
   "image/jpeg": [".jpg", ".jpeg"],
   "image/png": [".png"],
+  "image/gif": [".gif"],
+  "image/webp": [".webp"],
+  "text/plain": [".txt"],
+  "text/markdown": [".md"],
+  "application/msword": [".doc"],
 };
 
 const validateFile = (file: File): { isValid: boolean; error?: string } => {
@@ -26,7 +29,7 @@ const validateFile = (file: File): { isValid: boolean; error?: string } => {
   if (!isValidType) {
     return {
       isValid: false,
-      error: `File "${file.name}" is not a supported format. Please upload PDF, DOCX, or image files only.`,
+      error: `File "${file.name}" is not a supported format. Please upload PDF, DOC, images (PNG, JPG, GIF, WebP), or text files (TXT, MD) only.`,
     };
   }
 
@@ -50,13 +53,21 @@ const getContentType = (file: File): string => {
   switch (extension) {
     case "pdf":
       return "application/pdf";
-    case "docx":
-      return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    case "doc":
+      return "application/msword";
     case "jpg":
     case "jpeg":
       return "image/jpeg";
     case "png":
       return "image/png";
+    case "gif":
+      return "image/gif";
+    case "webp":
+      return "image/webp";
+    case "txt":
+      return "text/plain";
+    case "md":
+      return "text/markdown";
     default:
       return "application/octet-stream";
   }
@@ -116,12 +127,50 @@ export async function POST(request: NextRequest) {
         const result = await uploadFileToS3(fileBuffer, fileName, contentType);
 
         if (result.success) {
-          // Generate AI metadata (dummy data for now)
-          const aiMetadata = generateDummyAIMetadata(
-            file.name,
-            contentType,
-            file.size
-          );
+          // AI Analysis Integration
+          let aiMetadata;
+          try {
+            console.log(`Starting AI analysis for file: ${file.name}`);
+            const aiAnalysis = await analyzeDocument(
+              fileBuffer,
+              file.name,
+              contentType
+            );
+
+            aiMetadata = {
+              category: aiAnalysis.category,
+              isCustomCategory: aiAnalysis.isCustomCategory,
+              tags: aiAnalysis.tags,
+              confidence: aiAnalysis.confidence,
+              language: aiAnalysis.language,
+              description: aiAnalysis.description,
+              aiName: aiAnalysis.aiName,
+              processingStatus: "completed" as const,
+              lastAnalyzed: new Date(),
+            };
+
+            console.log(`AI analysis completed for ${file.name}:`, {
+              category: aiAnalysis.category,
+              isCustomCategory: aiAnalysis.isCustomCategory,
+              tags: aiAnalysis.tags,
+              confidence: aiAnalysis.confidence,
+              description: aiAnalysis.description,
+              aiName: aiAnalysis.aiName,
+            });
+          } catch (aiError) {
+            console.warn(
+              `AI analysis failed for ${file.name}, using fallback:`,
+              aiError
+            );
+            // Fallback to dummy data if AI analysis fails
+            aiMetadata = generateDummyAIMetadata(
+              file.name,
+              contentType,
+              file.size
+            );
+            // Mark as failed processing
+            aiMetadata.processingStatus = "failed";
+          }
 
           // Save file metadata to MongoDB (without storing public URL)
           const fileDoc = new File({

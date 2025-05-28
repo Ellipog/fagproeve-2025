@@ -9,10 +9,15 @@ interface User {
 }
 
 interface AIMetadata {
-  description: string;
-  tags: string[];
   category: string;
+  isCustomCategory: boolean;
+  tags: string[];
   confidence: number;
+  language: string;
+  description: string;
+  aiName: string;
+  processingStatus: "pending" | "completed" | "failed";
+  lastAnalyzed: string;
 }
 
 interface UserFile {
@@ -69,6 +74,9 @@ export default function Home() {
   // User files state
   const [userFiles, setUserFiles] = useState<UserFile[]>([]);
   const [loadingFiles, setLoadingFiles] = useState(false);
+
+  // Name display toggle state
+  const [showAINames, setShowAINames] = useState(true);
 
   // Get fresh URL for a file
   const getFreshFileUrl = async (fileId: string): Promise<string | null> => {
@@ -181,11 +189,13 @@ export default function Home() {
   // Accepted file types
   const acceptedTypes = {
     "application/pdf": [".pdf"],
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": [
-      ".docx",
-    ],
     "image/jpeg": [".jpg", ".jpeg"],
     "image/png": [".png"],
+    "image/gif": [".gif"],
+    "image/webp": [".webp"],
+    "text/plain": [".txt"],
+    "text/markdown": [".md"],
+    "application/msword": [".doc"],
   };
 
   const acceptString =
@@ -202,7 +212,7 @@ export default function Home() {
 
     if (!isValidType) {
       setError(
-        `File "${file.name}" is not a supported format. Please upload PDF, DOCX, or image files only.`
+        `File "${file.name}" is not a supported format. Please upload PDF, DOC, images (PNG, JPG, GIF, WebP), or text files (TXT, MD) only.`
       );
       return false;
     }
@@ -270,7 +280,9 @@ export default function Home() {
   const getFileIcon = (file: File): string => {
     if (file.type.startsWith("image/")) return "🖼️";
     if (file.type === "application/pdf") return "📄";
-    if (file.type.includes("wordprocessingml")) return "📝";
+    if (file.type === "application/msword") return "📝";
+    if (file.type === "text/plain") return "📄";
+    if (file.type === "text/markdown") return "📝";
     return "📎";
   };
 
@@ -421,7 +433,9 @@ export default function Home() {
             <h1 className="text-3xl font-bold text-gray-900 mb-2">
               File Upload
             </h1>
-            <p className="text-gray-600">Upload PDF, DOCX, or image files</p>
+            <p className="text-gray-600">
+              Upload documents and files for AI analysis
+            </p>
           </div>
           <div className="text-right">
             <p className="text-sm text-gray-600 mb-2">Welcome, {user?.email}</p>
@@ -462,7 +476,8 @@ export default function Home() {
                 Drop files here or click to browse
               </p>
               <p className="text-sm text-gray-500 mt-2">
-                Supports PDF, DOCX, and image files (JPG, PNG)
+                Supports PDF, DOC, images (JPG, PNG, GIF, WebP), and text files
+                (TXT, MD)
               </p>
               <p className="text-xs text-gray-400 mt-1">
                 Maximum file size: 10MB
@@ -562,7 +577,9 @@ export default function Home() {
                     <span className="text-2xl">✅</span>
                     <div>
                       <p className="font-medium text-gray-900">
-                        {file.originalName}
+                        {showAINames
+                          ? file.aiMetadata.aiName
+                          : file.originalName}
                       </p>
                       <p className="text-sm text-gray-500">
                         {formatFileSize(file.size)} • {file.type}
@@ -629,13 +646,30 @@ export default function Home() {
             <h2 className="text-xl font-semibold text-gray-900">
               Your Files ({userFiles.length})
             </h2>
-            <button
-              onClick={fetchUserFiles}
-              disabled={loadingFiles}
-              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 transition-colors duration-200 text-sm"
-            >
-              {loadingFiles ? "Loading..." : "Refresh"}
-            </button>
+            <div className="flex items-center space-x-3">
+              <button
+                onClick={() => setShowAINames(!showAINames)}
+                className={`px-3 py-1 text-sm rounded-md transition-colors duration-200 ${
+                  showAINames
+                    ? "bg-green-100 text-green-800 border border-green-300"
+                    : "bg-gray-100 text-gray-800 border border-gray-300"
+                }`}
+                title={
+                  showAINames
+                    ? "Switch to original names"
+                    : "Switch to AI names"
+                }
+              >
+                {showAINames ? "AI Names" : "Original Names"}
+              </button>
+              <button
+                onClick={fetchUserFiles}
+                disabled={loadingFiles}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 transition-colors duration-200 text-sm"
+              >
+                {loadingFiles ? "Loading..." : "Refresh"}
+              </button>
+            </div>
           </div>
 
           {loadingFiles ? (
@@ -667,7 +701,9 @@ export default function Home() {
                       <div className="flex-1">
                         <div className="flex items-center space-x-2 mb-2">
                           <h3 className="font-medium text-gray-900">
-                            {file.originalName}
+                            {showAINames
+                              ? file.aiMetadata.aiName
+                              : file.originalName}
                           </h3>
                           <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">
                             {file.aiMetadata.category}
