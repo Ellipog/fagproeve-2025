@@ -12,6 +12,8 @@ interface AIMetadata {
   category: string;
   isCustomCategory: boolean;
   tags: string[];
+  sensitiveData?: boolean;
+  sensitiveDataTags?: string[];
   confidence: number;
   language: string;
   description: string;
@@ -708,21 +710,48 @@ export default function Home() {
                           <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">
                             {file.aiMetadata.category}
                           </span>
+                          {file.aiMetadata.sensitiveData && (
+                            <span className="px-2 py-1 bg-red-100 text-red-800 text-xs rounded-full">
+                              🔒 Sensitive Data
+                            </span>
+                          )}
                         </div>
 
                         <p className="text-sm text-gray-600 mb-3">
                           {file.aiMetadata.description}
                         </p>
 
+                        {file.aiMetadata.sensitiveDataTags &&
+                          file.aiMetadata.sensitiveDataTags.length > 0 && (
+                            <div className="mb-3">
+                              <div className="text-xs text-red-600 font-medium mb-1">
+                                Sensitive Data Tags:
+                              </div>
+                              <div className="flex flex-wrap gap-1">
+                                {file.aiMetadata.sensitiveDataTags.map(
+                                  (tag, tagIndex) => (
+                                    <span
+                                      key={tagIndex}
+                                      className="px-2 py-1 bg-red-50 text-red-700 text-xs rounded border border-red-200"
+                                    >
+                                      {tag}
+                                    </span>
+                                  )
+                                )}
+                              </div>
+                            </div>
+                          )}
+
                         <div className="flex flex-wrap gap-1 mb-3">
-                          {file.aiMetadata.tags.map((tag, tagIndex) => (
-                            <span
-                              key={tagIndex}
-                              className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded"
-                            >
-                              {tag}
-                            </span>
-                          ))}
+                          {file.aiMetadata.tags &&
+                            file.aiMetadata.tags.map((tag, tagIndex) => (
+                              <span
+                                key={tagIndex}
+                                className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded"
+                              >
+                                {tag}
+                              </span>
+                            ))}
                         </div>
 
                         <div className="flex items-center space-x-4 text-sm text-gray-500">

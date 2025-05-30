@@ -2,6 +2,7 @@ import { OpenAI } from "openai";
 import {
   PREDEFINED_CATEGORIES,
   PREDEFINED_TAGS,
+  PREDEFINED_SENSITIVE_DATA_TAGS,
   CUSTOM_CATEGORY_PREFIX,
   DEFAULT_CONFIDENCE_THRESHOLD,
 } from "./constants";
@@ -12,6 +13,8 @@ export interface AIAnalysisResult {
   category: string;
   isCustomCategory: boolean;
   tags: string[];
+  sensitiveData: boolean;
+  sensitiveDataTags: string[];
   confidence: number;
   language: string;
   description: string;
@@ -42,6 +45,8 @@ async function analyzePdfDirectly(
   "category": "kategori fra listen eller CUSTOM_[navn] for nye kategorier",
   "isCustomCategory": false/true,
   "tags": ["tag1", "tag2", "tag3"],
+  "sensitiveData": true/false,
+  "sensitiveDataTags": ["navn", "fødselsnummer", "adresse"],
   "confidence": 0.85,
   "language": "no/en/unknown",
   "description": "kort beskrivelse på norsk",
@@ -49,11 +54,14 @@ async function analyzePdfDirectly(
 }
 
 Tilgjengelige kategorier: ${PREDEFINED_CATEGORIES.join(", ")}
-Tilgjengelige tags: ${PREDEFINED_TAGS.join(", ")}
+Tilgjengelige generelle tags: ${PREDEFINED_TAGS.join(", ")}
+Tilgjengelige sensitive data tags: ${PREDEFINED_SENSITIVE_DATA_TAGS.join(", ")}
 
 Retningslinjer:
 - Bruk eksisterende kategorier når mulig, ellers lag ny med CUSTOM_ prefix
-- Velg 3-5 relevante tags
+- Velg relevante generelle tags (ikke-sensitive)
+- Sett sensitiveData til true hvis dokumentet inneholder personopplysninger
+- Velg relevante sensitive data tags hvis dokumentet inneholder personopplysninger
 - Confidence skal være mellom 0 og 1
 - Language skal være "no" for norsk, "en" for engelsk, eller "unknown"
 - Description skal være en kort, informativ beskrivelse på norsk (maks 100 ord)
@@ -150,6 +158,8 @@ async function analyzeImageWithGPT4oMini(
   "category": "kategori fra listen eller CUSTOM_[navn] for nye kategorier",
   "isCustomCategory": false/true,
   "tags": ["tag1", "tag2", "tag3"],
+  "sensitiveData": true/false,
+  "sensitiveDataTags": ["navn", "fødselsnummer", "adresse"],
   "confidence": 0.85,
   "language": "no/en/unknown",
   "description": "kort beskrivelse på norsk",
@@ -157,11 +167,14 @@ async function analyzeImageWithGPT4oMini(
 }
 
 Tilgjengelige kategorier: ${PREDEFINED_CATEGORIES.join(", ")}
-Tilgjengelige tags: ${PREDEFINED_TAGS.join(", ")}
+Tilgjengelige generelle tags: ${PREDEFINED_TAGS.join(", ")}
+Tilgjengelige sensitive data tags: ${PREDEFINED_SENSITIVE_DATA_TAGS.join(", ")}
 
 Retningslinjer:
 - Bruk eksisterende kategorier når mulig, ellers lag ny med CUSTOM_ prefix
-- Velg 3-5 relevante tags
+- Velg relevante generelle tags (ikke-sensitive)
+- Sett sensitiveData til true hvis dokumentet inneholder personopplysninger
+- Velg relevante sensitive data tags hvis dokumentet inneholder personopplysninger
 - Confidence skal være mellom 0 og 1
 - Language skal være "no" for norsk, "en" for engelsk, eller "unknown"
 - Description skal være en kort, informativ beskrivelse på norsk (maks 100 ord)
@@ -219,6 +232,10 @@ function validateAndSanitizeResult(result: AIAnalysisResult): AIAnalysisResult {
     category: result.category || "Offentlig dokument",
     isCustomCategory: Boolean(result.isCustomCategory),
     tags: Array.isArray(result.tags) ? result.tags.slice(0, 10) : ["dokument"],
+    sensitiveData: Boolean(result.sensitiveData),
+    sensitiveDataTags: Array.isArray(result.sensitiveDataTags)
+      ? result.sensitiveDataTags.slice(0, 10)
+      : [],
     confidence: Math.max(0, Math.min(1, Number(result.confidence) || 0.5)),
     language: result.language || "no",
     description: result.description || "Dokument lastet opp til systemet",
@@ -248,84 +265,18 @@ function validateAndSanitizeResult(result: AIAnalysisResult): AIAnalysisResult {
     sanitized.tags = ["dokument"];
   }
 
+  // Ensure sensitive data tags are strings and not empty
+  sanitized.sensitiveDataTags = sanitized.sensitiveDataTags
+    .filter((tag) => typeof tag === "string" && tag.trim().length > 0)
+    .map((tag) => tag.trim().toLowerCase())
+    .slice(0, 10);
+
+  // Set sensitiveData to false if no sensitive data tags
+  if (sanitized.sensitiveDataTags.length === 0) {
+    sanitized.sensitiveData = false;
+  }
+
   return sanitized;
-}
-
-// Fallback analysis for when AI fails
-function analyzeWithFallback(
-  fileBuffer: Buffer,
-  fileName: string,
-  mimeType: string
-): AIAnalysisResult {
-  console.log("Using fallback analysis for:", fileName);
-
-  // Basic categorization based on file type and name
-  let category = "Offentlig dokument";
-  let description = "Dokument lastet opp til systemet";
-  let aiName =
-    fileName.replace(/\.[^/.]+$/, "").split(/[-_\s]+/)[0] || "Dokument"; // Take first word only
-  const lowerFileName = fileName.toLowerCase();
-
-  // Simple keyword-based categorization
-  if (lowerFileName.includes("pass") || lowerFileName.includes("passport")) {
-    category = "Pass";
-    description = "Passdokument for identifikasjon";
-    aiName = "Pass";
-  } else if (
-    lowerFileName.includes("kontrakt") ||
-    lowerFileName.includes("contract")
-  ) {
-    category = "Arbeidskontrakt";
-    description = "Arbeidskontrakt eller ansettelsesavtale";
-    aiName = "Kontrakt";
-  } else if (lowerFileName.includes("attest")) {
-    category = "Bostedsattest";
-    description = "Attest som bekrefter bostedsadresse";
-    aiName = "Attest";
-  } else if (
-    lowerFileName.includes("vitnemål") ||
-    lowerFileName.includes("diploma")
-  ) {
-    category = "Vitnemål";
-    description = "Utdanningsvitnemål eller diplom";
-    aiName = "Vitnemål";
-  } else if (
-    lowerFileName.includes("lønn") ||
-    lowerFileName.includes("salary")
-  ) {
-    category = "Lønnslipp";
-    description = "Lønnslipp som viser inntekt";
-    aiName = "Lønnslipp";
-  } else if (lowerFileName.includes("bank")) {
-    category = "Bankkontoutskrift";
-    description = "Kontoutskrift fra bank";
-    aiName = "Kontoutskrift";
-  } else if (
-    lowerFileName.includes("helse") ||
-    lowerFileName.includes("health")
-  ) {
-    category = "Helseattest";
-    description = "Helseattest eller medisinsk dokumentasjon";
-    aiName = "Helseattest";
-  }
-
-  // Basic tags based on file type
-  const tags: string[] = [];
-  if (mimeType.startsWith("image/")) {
-    tags.push("bilde");
-  } else if (mimeType === "application/pdf") {
-    tags.push("pdf", "dokument");
-  }
-
-  return {
-    category,
-    isCustomCategory: false,
-    tags,
-    confidence: 0.5, // Low confidence for fallback
-    language: "no",
-    description,
-    aiName,
-  };
 }
 
 // Main document analysis function
@@ -333,7 +284,7 @@ export async function analyzeDocument(
   fileBuffer: Buffer,
   fileName: string,
   mimeType: string
-): Promise<AIAnalysisResult> {
+) {
   try {
     console.log(`Starting document analysis for: ${fileName} (${mimeType})`);
 
@@ -361,7 +312,5 @@ export async function analyzeDocument(
     return await analyzeImageWithGPT4oMini(imageBuffer, fileName);
   } catch (error) {
     console.warn("Document analysis failed, using fallback:", error);
-    // Fallback: Basic rule-based analysis
-    return analyzeWithFallback(fileBuffer, fileName, mimeType);
   }
 }

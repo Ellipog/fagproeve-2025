@@ -14,6 +14,8 @@ export interface IFile extends Document {
     category: string;
     isCustomCategory: boolean;
     tags: string[];
+    sensitiveData: boolean;
+    sensitiveDataTags: string[];
     confidence: number;
     language: string;
     description: string; // Norwegian description of the document
@@ -71,6 +73,16 @@ const fileSchema = new Schema<IFile>(
           type: String,
         },
       ],
+      sensitiveData: {
+        type: Boolean,
+        required: true,
+        default: false,
+      },
+      sensitiveDataTags: [
+        {
+          type: String,
+        },
+      ],
       confidence: {
         type: Number,
         min: 0,
@@ -122,6 +134,12 @@ fileSchema.index({ userId: 1, "aiMetadata.category": 1 });
 
 // Index for tag-based queries
 fileSchema.index({ userId: 1, "aiMetadata.tags": 1 });
+
+// Index for sensitive data queries
+fileSchema.index({ userId: 1, "aiMetadata.sensitiveData": 1 });
+
+// Index for sensitive data tag queries
+fileSchema.index({ userId: 1, "aiMetadata.sensitiveDataTags": 1 });
 
 const File = mongoose.models.File || mongoose.model<IFile>("File", fileSchema);
 

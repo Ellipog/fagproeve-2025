@@ -1,10 +1,16 @@
 // Fallback AI metadata generator for when AI analysis fails
-import { PREDEFINED_CATEGORIES, PREDEFINED_TAGS } from "@/app/lib/constants";
+import {
+  PREDEFINED_CATEGORIES,
+  PREDEFINED_TAGS,
+  PREDEFINED_SENSITIVE_DATA_TAGS,
+} from "@/app/lib/constants";
 
 export interface AIMetadata {
   category: string;
   isCustomCategory: boolean;
   tags: string[];
+  sensitiveData: boolean;
+  sensitiveDataTags: string[];
   confidence: number;
   language: string;
   description: string;
@@ -36,11 +42,22 @@ export function generateDummyAIMetadata(
     fileName.replace(/\.[^/.]+$/, "").split(/[-_\s]+/)[0] || "Dokument"; // Take first word only
   const lowerFileName = fileName.toLowerCase();
 
-  // Simple keyword-based categorization
+  // Basic sensitive data detection based on document type
+  let sensitiveData = false;
+  let sensitiveDataTags: string[] = [];
+
+  // Simple keyword-based categorization with sensitive data detection
   if (lowerFileName.includes("pass") || lowerFileName.includes("passport")) {
     category = "Pass";
     description = "Passdokument for identifikasjon og reise";
     aiName = "Pass";
+    sensitiveData = true;
+    sensitiveDataTags = [
+      "navn",
+      "fødselsnummer",
+      "fødselsdato",
+      "statsborgerskap",
+    ];
   } else if (
     lowerFileName.includes("kontrakt") ||
     lowerFileName.includes("contract")
@@ -49,10 +66,14 @@ export function generateDummyAIMetadata(
     description =
       "Arbeidskontrakt eller ansettelsesavtale som beskriver arbeidsforhold";
     aiName = "Kontrakt";
+    sensitiveData = true;
+    sensitiveDataTags = ["navn", "lønn", "adresse"];
   } else if (lowerFileName.includes("attest")) {
     category = "Bostedsattest";
     description = "Attest som bekrefter bostedsadresse og folkeregistrering";
     aiName = "Attest";
+    sensitiveData = true;
+    sensitiveDataTags = ["navn", "adresse", "postadresse"];
   } else if (
     lowerFileName.includes("vitnemål") ||
     lowerFileName.includes("diploma")
@@ -61,6 +82,8 @@ export function generateDummyAIMetadata(
     description =
       "Utdanningsvitnemål eller diplom som bekrefter fullført utdanning";
     aiName = "Vitnemål";
+    sensitiveData = true;
+    sensitiveDataTags = ["navn", "fødselsdato"];
   } else if (
     lowerFileName.includes("lønn") ||
     lowerFileName.includes("salary")
@@ -68,10 +91,14 @@ export function generateDummyAIMetadata(
     category = "Lønnslipp";
     description = "Lønnslipp som viser inntekt og arbeidsforhold";
     aiName = "Lønnslipp";
+    sensitiveData = true;
+    sensitiveDataTags = ["navn", "lønn", "inntekt", "fødselsnummer"];
   } else if (lowerFileName.includes("bank")) {
     category = "Bankkontoutskrift";
     description = "Kontoutskrift fra bank som viser økonomisk situasjon";
     aiName = "Kontoutskrift";
+    sensitiveData = true;
+    sensitiveDataTags = ["navn", "bankkonto", "kontonummer", "beløp"];
   } else if (
     lowerFileName.includes("helse") ||
     lowerFileName.includes("health")
@@ -79,6 +106,8 @@ export function generateDummyAIMetadata(
     category = "Helseattest";
     description = "Helseattest eller medisinsk dokumentasjon";
     aiName = "Helseattest";
+    sensitiveData = true;
+    sensitiveDataTags = ["navn", "fødselsnummer", "fødselsdato"];
   }
 
   // Generate tags based on file type
@@ -114,6 +143,8 @@ export function generateDummyAIMetadata(
     category,
     isCustomCategory: false, // Fallback categories are predefined
     tags: [...new Set(tags)], // Remove duplicates
+    sensitiveData,
+    sensitiveDataTags,
     confidence,
     language: "no", // Default to Norwegian
     description,
