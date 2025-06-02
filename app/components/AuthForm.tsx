@@ -18,7 +18,7 @@ interface AuthResponse {
 }
 
 interface AuthFormProps {
-  onAuthSuccess: (user: User, token: string) => void;
+  onAuthSuccess: (user: User) => void;
 }
 
 export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
@@ -48,7 +48,7 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
 
       if (data.success && data.token && data.user) {
         localStorage.setItem("token", data.token);
-        onAuthSuccess(data.user, data.token);
+        onAuthSuccess(data.user);
         setEmail("");
         setPassword("");
       } else {

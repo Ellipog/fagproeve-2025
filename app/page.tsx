@@ -365,7 +365,7 @@ export default function Home() {
   };
 
   // Authentication handlers
-  const handleAuthSuccess = (user: User, _token: string) => {
+  const handleAuthSuccess = (user: User) => {
     setUser(user);
     setIsAuthenticated(true);
     fetchUserFiles();

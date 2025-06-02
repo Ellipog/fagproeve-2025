@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 
 export interface ToastProps {
   id: string;
@@ -21,20 +21,20 @@ export default function Toast({
 }: ToastProps) {
   const [isExiting, setIsExiting] = useState(false);
 
+  const handleRemove = useCallback(() => {
+    setIsExiting(true);
+    setTimeout(() => {
+      onRemove(id);
+    }, 300);
+  }, [id, onRemove]);
+
   useEffect(() => {
     const timer = setTimeout(() => {
       handleRemove();
     }, duration);
 
     return () => clearTimeout(timer);
-  }, [duration]);
-
-  const handleRemove = () => {
-    setIsExiting(true);
-    setTimeout(() => {
-      onRemove(id);
-    }, 300);
-  };
+  }, [duration, handleRemove]);
 
   const getToastStyles = () => {
     switch (type) {

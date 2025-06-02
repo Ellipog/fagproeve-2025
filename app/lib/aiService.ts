@@ -138,8 +138,7 @@ async function analyzePdfDirectly(
 
 // GPT-4o Mini analysis function
 async function analyzeImageWithGPT4oMini(
-  imageBuffer: Buffer,
-  fileName: string
+  imageBuffer: Buffer
 ): Promise<AIAnalysisResult> {
   try {
     console.log("Analyzing image with GPT-4o Mini");
@@ -305,7 +304,7 @@ export async function analyzeDocument(
     const imageBuffer = imageResult as Buffer;
 
     // Analyze image with GPT-4o Mini
-    return await analyzeImageWithGPT4oMini(imageBuffer, fileName);
+    return await analyzeImageWithGPT4oMini(imageBuffer);
   } catch (error) {
     console.warn("Document analysis failed, using fallback:", error);
   }

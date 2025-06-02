@@ -3,10 +3,7 @@ import { createCanvas } from "canvas";
 /**
  * Convert text files to image using Canvas - improved version matching client-side
  */
-export async function convertTextToImage(
-  textBuffer: Buffer,
-  _fileName: string
-): Promise<Buffer> {
+export async function convertTextToImage(textBuffer: Buffer): Promise<Buffer> {
   try {
     console.log("Starting text to image conversion using Canvas");
 
@@ -68,11 +65,11 @@ export async function convertTextToImage(
     const imageBuffer = canvas.toBuffer("image/png", { compressionLevel: 6 });
     console.log("Text to image conversion completed successfully");
     return imageBuffer;
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Error converting text to image:", error);
-    throw new Error(
-      `Text to image conversion failed: ${error?.message || "Unknown error"}`
-    );
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown error";
+    throw new Error(`Text to image conversion failed: ${errorMessage}`);
   }
 }
 
@@ -105,13 +102,13 @@ export async function convertDocumentToImage(
       fileName.endsWith(".csv") ||
       fileName.endsWith(".md")
     ) {
-      return await convertTextToImage(fileBuffer, fileName);
+      return await convertTextToImage(fileBuffer);
     } else {
       throw new Error(
         `Unsupported file type for conversion: ${mimeType}. Supported types: PDF (native OpenAI support), images (JPEG, PNG, GIF, WebP), text files, CSV, and Markdown.`
       );
     }
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error("Document processing failed:", error);
     throw error;
   }

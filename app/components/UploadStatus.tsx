@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 
 export interface UploadingFile {
   file: File;
@@ -20,6 +20,21 @@ export default function UploadStatus({
 }: UploadStatusProps) {
   const [dismissedItems, setDismissedItems] = useState<Set<number>>(new Set());
 
+  const handleDismiss = useCallback(
+    (index: number) => {
+      setDismissedItems((prev) => new Set([...prev, index]));
+      setTimeout(() => {
+        onDismiss(index);
+        setDismissedItems((prev) => {
+          const newSet = new Set(prev);
+          newSet.delete(index);
+          return newSet;
+        });
+      }, 300);
+    },
+    [onDismiss]
+  );
+
   // Auto-dismiss successful uploads after 3 seconds
   useEffect(() => {
     uploadingFiles.forEach((uploadFile, index) => {
@@ -29,19 +44,7 @@ export default function UploadStatus({
         }, 3000);
       }
     });
-  }, [uploadingFiles]);
-
-  const handleDismiss = (index: number) => {
-    setDismissedItems((prev) => new Set([...prev, index]));
-    setTimeout(() => {
-      onDismiss(index);
-      setDismissedItems((prev) => {
-        const newSet = new Set(prev);
-        newSet.delete(index);
-        return newSet;
-      });
-    }, 300);
-  };
+  }, [uploadingFiles, dismissedItems, handleDismiss]);
 
   const formatFileSize = (bytes: number): string => {
     if (bytes === 0) return "0 B";
