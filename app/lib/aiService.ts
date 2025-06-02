@@ -3,46 +3,18 @@ import {
   PREDEFINED_CATEGORIES,
   PREDEFINED_TAGS,
   PREDEFINED_SENSITIVE_DATA_TAGS,
-  CUSTOM_CATEGORY_PREFIX,
   DEFAULT_CONFIDENCE_THRESHOLD,
 } from "./constants";
 import { convertDocumentToImage } from "@/app/utils/documentToImage";
 
-// AI Analysis Result Interface
-export interface AIAnalysisResult {
-  category: string;
-  isCustomCategory: boolean;
-  tags: string[];
-  sensitiveData: boolean;
-  sensitiveDataTags: string[];
-  confidence: number;
-  language: string;
-  description: string;
-  aiName: string;
-}
-
-// Initialize OpenAI client
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
-// Analyze PDF directly with OpenAI's native PDF support
-async function analyzePdfDirectly(
-  pdfBuffer: Buffer,
-  fileName: string
-): Promise<AIAnalysisResult> {
-  try {
-    console.log("Analyzing PDF directly with OpenAI's native PDF support");
-
-    const openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-    });
-
-    // Create the analysis prompt
-    const prompt = `Analyser dette PDF-dokumentet og kategoriser det. Returner resultatet som JSON med følgende struktur:
-
-{
-  "category": "kategori fra listen eller CUSTOM_[navn] for nye kategorier",
+const Prompt = (
+  category: string[],
+  tags: string[],
+  sensitiveDataTags: string[]
+) => {
+  return `
+  {
+  "category": "kategori fra listen eller et nytt passende norsk kategorinavn",
   "isCustomCategory": false/true,
   "tags": ["tag1", "tag2", "tag3"],
   "sensitiveData": true/false,
@@ -58,7 +30,9 @@ Tilgjengelige generelle tags: ${PREDEFINED_TAGS.join(", ")}
 Tilgjengelige sensitive data tags: ${PREDEFINED_SENSITIVE_DATA_TAGS.join(", ")}
 
 Retningslinjer:
-- Bruk eksisterende kategorier når mulig, ellers lag ny med CUSTOM_ prefix
+- Alt skal være på norsk
+- Bruk eksisterende kategorier når mulig, ellers lag en ny passende norsk kategori (f.eks. "Forsikringsdokument", "Reisebevis", "Handelsdokument")
+- Nye kategorier skal alltid være på norsk og beskrivende
 - Velg relevante generelle tags (ikke-sensitive)
 - Sett sensitiveData til true hvis dokumentet inneholder personopplysninger
 - Velg relevante sensitive data tags hvis dokumentet inneholder personopplysninger
@@ -67,6 +41,39 @@ Retningslinjer:
 - Description skal være en kort, informativ beskrivelse på norsk (maks 100 ord)
 - aiName skal være SUPER KORT - maks 3 ord, helst 1-2 ord (f.eks. "Pass", "Kontrakt", "Vitnemål", "Lønnslipp")
 `;
+};
+
+// AI Analysis Result Interface
+export interface AIAnalysisResult {
+  category: string;
+  isCustomCategory: boolean;
+  tags: string[];
+  sensitiveData: boolean;
+  sensitiveDataTags: string[];
+  confidence: number;
+  language: string;
+  description: string;
+  aiName: string;
+}
+
+// Analyze PDF directly with OpenAI's native PDF support
+async function analyzePdfDirectly(
+  pdfBuffer: Buffer,
+  fileName: string
+): Promise<AIAnalysisResult> {
+  try {
+    console.log("Analyzing PDF directly with OpenAI's native PDF support");
+
+    const openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+
+    // Create the analysis prompt
+    const prompt = Prompt(
+      PREDEFINED_CATEGORIES,
+      PREDEFINED_TAGS,
+      PREDEFINED_SENSITIVE_DATA_TAGS
+    );
 
     // Upload the PDF file to OpenAI
     console.log("Uploading PDF file to OpenAI...");
@@ -152,34 +159,11 @@ async function analyzeImageWithGPT4oMini(
     const base64Image = imageBuffer.toString("base64");
 
     // Create the analysis prompt
-    const prompt = `Analyser dette bildet/dokumentet og kategoriser det. Returner resultatet som JSON med følgende struktur:
-
-{
-  "category": "kategori fra listen eller CUSTOM_[navn] for nye kategorier",
-  "isCustomCategory": false/true,
-  "tags": ["tag1", "tag2", "tag3"],
-  "sensitiveData": true/false,
-  "sensitiveDataTags": ["navn", "fødselsnummer", "adresse"],
-  "confidence": 0.85,
-  "language": "no/en/unknown",
-  "description": "kort beskrivelse på norsk",
-  "aiName": "kort navn"
-}
-
-Tilgjengelige kategorier: ${PREDEFINED_CATEGORIES.join(", ")}
-Tilgjengelige generelle tags: ${PREDEFINED_TAGS.join(", ")}
-Tilgjengelige sensitive data tags: ${PREDEFINED_SENSITIVE_DATA_TAGS.join(", ")}
-
-Retningslinjer:
-- Bruk eksisterende kategorier når mulig, ellers lag ny med CUSTOM_ prefix
-- Velg relevante generelle tags (ikke-sensitive)
-- Sett sensitiveData til true hvis dokumentet inneholder personopplysninger
-- Velg relevante sensitive data tags hvis dokumentet inneholder personopplysninger
-- Confidence skal være mellom 0 og 1
-- Language skal være "no" for norsk, "en" for engelsk, eller "unknown"
-- Description skal være en kort, informativ beskrivelse på norsk (maks 100 ord)
-- aiName skal være SUPER KORT - maks 3 ord, helst 1-2 ord (f.eks. "Pass", "Kontrakt", "Vitnemål", "Lønnslipp")
-`;
+    const prompt = Prompt(
+      PREDEFINED_CATEGORIES,
+      PREDEFINED_TAGS,
+      PREDEFINED_SENSITIVE_DATA_TAGS
+    );
 
     const response = await openai.chat.completions.create({
       model: process.env.OPENAI_MODEL || "gpt-4o-mini",
@@ -242,8 +226,21 @@ function validateAndSanitizeResult(result: AIAnalysisResult): AIAnalysisResult {
     aiName: result.aiName || "Dokument",
   };
 
-  // Validate category
+  // Determine if category is custom by checking if it's in predefined categories
+  const isInPredefinedCategories = PREDEFINED_CATEGORIES.includes(
+    sanitized.category
+  );
+
+  // If not in predefined list, mark as custom category
+  if (!isInPredefinedCategories) {
+    sanitized.isCustomCategory = true;
+  } else {
+    sanitized.isCustomCategory = false;
+  }
+
+  // Clean up any remaining CUSTOM_ prefixes from old data
   if (sanitized.category.startsWith("CUSTOM_")) {
+    sanitized.category = sanitized.category.replace("CUSTOM_", "").trim();
     sanitized.isCustomCategory = true;
   }
 

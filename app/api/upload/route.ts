@@ -100,33 +100,57 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No files provided" }, { status: 400 });
     }
 
-    const uploadResults = [];
-    const errors = [];
+    // Define types for upload results
+    interface UploadResult {
+      id: string;
+      originalName: string;
+      fileName: string;
+      s3Key: string;
+      size: number;
+      type: string;
+      aiMetadata: any;
+      uploadedAt: Date;
+    }
 
-    for (const file of files) {
-      // Validate file
-      const validation = validateFile(file);
-      if (!validation.isValid) {
-        errors.push(validation.error);
-        continue;
-      }
+    // Process files in parallel using Promise.allSettled
+    const fileProcessingPromises = files.map(
+      async (file): Promise<UploadResult> => {
+        // Validate file
+        const validation = validateFile(file);
+        if (!validation.isValid) {
+          throw new Error(validation.error || "File validation failed");
+        }
 
-      try {
-        // Get file buffer
-        const fileBuffer = Buffer.from(await file.arrayBuffer());
+        try {
+          // Get file buffer
+          const fileBuffer = Buffer.from(await file.arrayBuffer());
 
-        // Generate a unique filename with user ID
-        const timestamp = new Date().getTime();
-        const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
-        const fileName = `${decoded.userId}/${timestamp}-${safeName}`;
+          // Generate a unique filename with user ID
+          const timestamp = new Date().getTime();
+          const randomSuffix = Math.random().toString(36).substring(2, 8);
+          const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
+          const fileName = `${decoded.userId}/${timestamp}-${randomSuffix}-${safeName}`;
 
-        // Get content type
-        const contentType = getContentType(file);
+          // Get content type
+          const contentType = getContentType(file);
 
-        // Upload to S3
-        const result = await uploadFileToS3(fileBuffer, fileName, contentType);
+          // Upload to S3
+          const result = await uploadFileToS3(
+            fileBuffer,
+            fileName,
+            contentType
+          );
 
-        if (result.success) {
+          if (!result.success) {
+            const errorMessage =
+              result.error instanceof Error
+                ? result.error.message
+                : typeof result.error === "string"
+                ? result.error
+                : "Upload failed";
+            throw new Error(`Failed to upload ${file.name}: ${errorMessage}`);
+          }
+
           // AI Analysis Integration
           let aiMetadata;
           try {
@@ -176,13 +200,12 @@ export async function POST(request: NextRequest) {
             aiMetadata.processingStatus = "failed";
           }
 
-          // Save file metadata to MongoDB (without storing public URL)
+          // Save file metadata to MongoDB
           const fileDoc = new File({
             userId: decoded.userId,
             originalName: file.name,
             fileName,
             s3Key: result.key,
-            // s3Url is omitted - we'll generate pre-signed URLs on demand
             size: file.size,
             mimeType: contentType,
             aiMetadata,
@@ -190,24 +213,43 @@ export async function POST(request: NextRequest) {
 
           await fileDoc.save();
 
-          uploadResults.push({
+          return {
             id: fileDoc._id,
             originalName: file.name,
             fileName,
-            s3Key: result.key,
+            s3Key: result.key || "",
             size: file.size,
             type: contentType,
             aiMetadata,
             uploadedAt: fileDoc.uploadedAt,
-          });
-        } else {
-          errors.push(`Failed to upload ${file.name}: ${result.error}`);
+          };
+        } catch (error) {
+          console.error(`Error processing file ${file.name}:`, error);
+          const errorMessage =
+            error instanceof Error ? error.message : "Unknown error";
+          throw new Error(`Failed to process ${file.name}: ${errorMessage}`);
         }
-      } catch (error) {
-        console.error(`Error processing file ${file.name}:`, error);
-        errors.push(`Failed to process ${file.name}`);
       }
-    }
+    );
+
+    // Wait for all file processing to complete (parallel execution)
+    const results = await Promise.allSettled(fileProcessingPromises);
+
+    // Separate successful uploads from errors
+    const uploadResults: UploadResult[] = [];
+    const errors: string[] = [];
+
+    results.forEach((result, index) => {
+      if (result.status === "fulfilled") {
+        uploadResults.push(result.value);
+      } else {
+        const errorMessage =
+          result.reason instanceof Error
+            ? result.reason.message
+            : `Failed to process file ${files[index].name}`;
+        errors.push(errorMessage);
+      }
+    });
 
     // Return results
     if (uploadResults.length === 0 && errors.length > 0) {
@@ -217,12 +259,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    return NextResponse.json({
+    const response = {
       success: true,
       uploadedFiles: uploadResults,
       errors: errors.length > 0 ? errors : undefined,
-      message: `Successfully uploaded ${uploadResults.length} file(s)`,
-    });
+      message: `Successfully uploaded ${uploadResults.length} file(s)${
+        errors.length > 0 ? ` (${errors.length} failed)` : ""
+      }`,
+    };
+
+    console.log(
+      `Upload completed: ${uploadResults.length} successful, ${errors.length} failed`
+    );
+
+    return NextResponse.json(response);
   } catch (error) {
     console.error("Error in upload route:", error);
     return NextResponse.json(

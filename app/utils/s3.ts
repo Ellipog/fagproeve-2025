@@ -3,6 +3,7 @@ import {
   PutObjectCommand,
   ListObjectsV2Command,
   GetObjectCommand,
+  DeleteObjectCommand,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
@@ -65,6 +66,25 @@ export async function generatePresignedUrl(
     return { success: true, url: signedUrl };
   } catch (error) {
     console.error("Error generating pre-signed URL:", error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+// Delete a file from S3
+export async function deleteFileFromS3(s3Key: string) {
+  try {
+    const deleteCommand = new DeleteObjectCommand({
+      Bucket: bucketName,
+      Key: s3Key,
+    });
+
+    await s3Client.send(deleteCommand);
+    return { success: true };
+  } catch (error) {
+    console.error("Error deleting file from S3:", error);
     return {
       success: false,
       error: error instanceof Error ? error.message : String(error),

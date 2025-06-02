@@ -145,8 +145,19 @@ export const PREDEFINED_TAGS = [
   "liten-fil",
 ];
 
-// Custom category prefix
-export const CUSTOM_CATEGORY_PREFIX = "CUSTOM_";
+// Categories matching Norwegian immigration needs
+// Used for initial categorization and validation
+export const CATEGORY_PATTERNS = {
+  identity: ["pass", "id", "identitet", "nasjonalt", "fødselsattest"],
+  residence: ["bosted", "folkeregister", "leieavtale", "eiendom"],
+  work: ["arbeid", "lønn", "skatt", "kontrakt", "avtale"],
+  education: ["vitnemål", "karakter", "utdanning", "kurs"],
+  family: ["vigsel", "skilsmisse", "samboer", "barn"],
+  financial: ["bank", "lån", "forsikring", "pensjon"],
+  health: ["helse", "vaksinasjon", "medisinsk"],
+  legal: ["fullmakt", "juridisk", "rettslig"],
+  official: ["offentlig", "kommunal", "politi"],
+};
 
 // Default confidence threshold
 export const DEFAULT_CONFIDENCE_THRESHOLD = 0.7;

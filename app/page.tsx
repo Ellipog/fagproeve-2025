@@ -1,6 +1,13 @@
 "use client";
 
-import { useState, useRef, DragEvent, ChangeEvent, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
+import AuthForm from "./components/AuthForm";
+import FileUpload, { UploadingFile } from "./components/FileUpload";
+import FiltersPanel from "./components/FiltersPanel";
+import FileItem from "./components/FileItem";
+import ConfirmationModal from "./components/ConfirmationModal";
+import ToastContainer from "./components/ToastContainer";
+import { ToastProps } from "./components/Toast";
 
 interface User {
   id: string;
@@ -33,15 +40,6 @@ interface UserFile {
   uploadedAt: string;
 }
 
-interface AuthResponse {
-  success: boolean;
-  message: string;
-  token?: string;
-  user?: User;
-  error?: string;
-  details?: string[];
-}
-
 interface UploadResult {
   id: string;
   originalName: string;
@@ -57,28 +55,56 @@ export default function Home() {
   // Authentication state
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [user, setUser] = useState<User | null>(null);
-  const [authMode, setAuthMode] = useState<"login" | "signup">("login");
-  const [authLoading, setAuthLoading] = useState(false);
-  const [authError, setAuthError] = useState<string>("");
 
-  // Auth form state
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-
-  // File upload state
-  const [dragActive, setDragActive] = useState(false);
-  const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
-  const [error, setError] = useState<string>("");
-  const [uploading, setUploading] = useState(false);
-  const [uploadResults, setUploadResults] = useState<UploadResult[]>([]);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // User files state
+  // File state
   const [userFiles, setUserFiles] = useState<UserFile[]>([]);
   const [loadingFiles, setLoadingFiles] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
 
-  // Name display toggle state
+  // Upload status tracking
+  const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([]);
+
+  // Filter and search state
+  const [searchTerm, setSearchTerm] = useState("");
+  const [sortBy, setSortBy] = useState("uploadedAt");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  const [selectedCategory, setSelectedCategory] = useState("");
+  const [showSensitiveOnly, setShowSensitiveOnly] = useState(false);
   const [showAINames, setShowAINames] = useState(true);
+
+  // Category collapsible state
+  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(
+    new Set()
+  );
+
+  // Modal and notification state
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: "",
+    message: "",
+    onConfirm: () => {},
+  });
+
+  const [toasts, setToasts] = useState<Omit<ToastProps, "onRemove">[]>([]);
+
+  // Toggle category collapsed state
+  const toggleCategoryCollapse = (category: string) => {
+    setCollapsedCategories((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(category)) {
+        newSet.delete(category);
+      } else {
+        newSet.add(category);
+      }
+      return newSet;
+    });
+  };
 
   // Get fresh URL for a file
   const getFreshFileUrl = async (fileId: string): Promise<string | null> => {
@@ -93,12 +119,7 @@ export default function Home() {
       });
 
       const data = await response.json();
-      if (data.success) {
-        return data.url;
-      } else {
-        console.error("Failed to get file URL:", data.error);
-        return null;
-      }
+      return data.success ? data.url : null;
     } catch (error) {
       console.error("Error getting file URL:", error);
       return null;
@@ -131,699 +152,636 @@ export default function Home() {
     }
   };
 
-  // Check for existing token on mount
-  useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (token) {
-      // You could verify the token here by calling an API endpoint
-      // For now, we'll just assume it's valid if it exists
-      setIsAuthenticated(true);
-      fetchUserFiles();
-      // You could also fetch user data here
-    }
-  }, []);
+  // Handle file upload with progress tracking
+  const handleUpload = async (files: File[]) => {
+    if (files.length === 0) return;
 
-  // Authentication functions
-  const handleAuth = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAuthLoading(true);
-    setAuthError("");
+    setUploading(true);
+    setUploadError("");
+
+    // Initialize upload status for each file
+    const initialUploadingFiles: UploadingFile[] = files.map((file) => ({
+      file,
+      progress: 0,
+      status: "uploading",
+    }));
+    setUploadingFiles(initialUploadingFiles);
 
     try {
-      const endpoint =
-        authMode === "login" ? "/api/auth/login" : "/api/auth/signup";
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ email, password }),
+      const token = localStorage.getItem("token");
+
+      // Upload files in parallel
+      const uploadPromises = files.map(async (file, index) => {
+        const formData = new FormData();
+        formData.append("file", file);
+
+        // Start progress simulation for this specific file
+        const progressInterval = setInterval(() => {
+          setUploadingFiles((prev) =>
+            prev.map((uploadFile, i) =>
+              i === index
+                ? {
+                    ...uploadFile,
+                    progress: Math.min(
+                      uploadFile.progress + Math.random() * 15,
+                      90
+                    ),
+                  }
+                : uploadFile
+            )
+          );
+        }, 300);
+
+        try {
+          const response = await fetch("/api/upload-single", {
+            method: "POST",
+            headers: {
+              ...(token && { Authorization: `Bearer ${token}` }),
+            },
+            body: formData,
+          });
+
+          clearInterval(progressInterval);
+
+          const result = await response.json();
+
+          if (result.success) {
+            // Mark this file as successful
+            setUploadingFiles((prev) =>
+              prev.map((uploadFile, i) =>
+                i === index
+                  ? {
+                      ...uploadFile,
+                      progress: 100,
+                      status: "success",
+                    }
+                  : uploadFile
+              )
+            );
+            return { success: true, file: file.name, result };
+          } else {
+            // Mark this file as failed
+            setUploadingFiles((prev) =>
+              prev.map((uploadFile, i) =>
+                i === index
+                  ? {
+                      ...uploadFile,
+                      status: "error",
+                      error: result.error || "Upload failed",
+                    }
+                  : uploadFile
+              )
+            );
+            throw new Error(result.error || "Upload failed");
+          }
+        } catch (error) {
+          clearInterval(progressInterval);
+
+          // Mark this file as failed
+          setUploadingFiles((prev) =>
+            prev.map((uploadFile, i) =>
+              i === index
+                ? {
+                    ...uploadFile,
+                    status: "error",
+                    error:
+                      error instanceof Error ? error.message : "Upload failed",
+                  }
+                : uploadFile
+            )
+          );
+          throw error;
+        }
       });
 
-      const data: AuthResponse = await response.json();
+      // Wait for all uploads to complete
+      const results = await Promise.allSettled(uploadPromises);
 
-      if (data.success && data.token && data.user) {
-        localStorage.setItem("token", data.token);
-        setUser(data.user);
-        setIsAuthenticated(true);
-        setEmail("");
-        setPassword("");
-      } else {
-        setAuthError(data.error || "Authentication failed");
+      // Count successful and failed uploads
+      const successful = results.filter(
+        (result) => result.status === "fulfilled"
+      ).length;
+      const failed = results.filter(
+        (result) => result.status === "rejected"
+      ).length;
+
+      console.log(`Upload summary: ${successful} successful, ${failed} failed`);
+
+      // Only show error if all uploads failed
+      if (successful === 0 && failed > 0) {
+        setUploadError(`All ${failed} file uploads failed. Please try again.`);
+      } else if (failed > 0) {
+        console.warn(`${failed} out of ${files.length} files failed to upload`);
       }
-    } catch {
-      setAuthError("Network error. Please try again.");
+
+      // Refresh the file list after uploads
+      await fetchUserFiles();
+
+      // Auto-clear successful uploads after 3 seconds
+      setTimeout(() => {
+        setUploadingFiles((prev) =>
+          prev.filter((uploadFile) => uploadFile.status !== "success")
+        );
+      }, 3000);
+    } catch (error) {
+      console.error("Upload error:", error);
+      setUploadError("Failed to initiate file uploads. Please try again.");
     } finally {
-      setAuthLoading(false);
+      setUploading(false);
     }
+  };
+
+  const handleDismissUploadStatus = (index: number) => {
+    setUploadingFiles((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  // Handle file actions
+  const handleViewFile = async (file: UserFile) => {
+    const freshUrl = await getFreshFileUrl(file.id);
+    if (freshUrl) {
+      window.open(freshUrl, "_blank");
+    } else {
+      showToast(
+        "error",
+        "Feil",
+        "Kunne ikke generere tilgangs-URL. Prøv igjen."
+      );
+    }
+  };
+
+  const handleCopyUrl = async (file: UserFile) => {
+    const freshUrl = await getFreshFileUrl(file.id);
+    if (freshUrl) {
+      await navigator.clipboard.writeText(freshUrl);
+      showToast(
+        "success",
+        "URL kopiert!",
+        "URL er kopiert til utklippstavlen."
+      );
+    } else {
+      showToast(
+        "error",
+        "Feil",
+        "Kunne ikke generere tilgangs-URL. Prøv igjen."
+      );
+    }
+  };
+
+  const handleDeleteFile = async (file: UserFile) => {
+    const fileName = showAINames ? file.aiMetadata?.aiName : file.originalName;
+
+    showConfirmModal(
+      "Slett fil",
+      `Er du sikker på at du vil slette "${fileName}"?\n\nDenne handlingen kan ikke angres.`,
+      async () => {
+        hideConfirmModal();
+
+        const token = localStorage.getItem("token");
+        if (!token) {
+          showToast(
+            "error",
+            "Feil",
+            "Du må være innlogget for å slette filer."
+          );
+          return;
+        }
+
+        try {
+          const response = await fetch(`/api/files/${file.id}`, {
+            method: "DELETE",
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          });
+
+          const data = await response.json();
+
+          if (data.success) {
+            // Remove the file from the local state
+            setUserFiles((prev) => prev.filter((f) => f.id !== file.id));
+            showToast("success", "Fil slettet!", `"${fileName}" er slettet.`);
+          } else {
+            showToast(
+              "error",
+              "Feil ved sletting",
+              data.error || "Ukjent feil"
+            );
+          }
+        } catch (error) {
+          console.error("Error deleting file:", error);
+          showToast("error", "Feil", "Feil ved sletting av fil. Prøv igjen.");
+        }
+      }
+    );
+  };
+
+  // Authentication handlers
+  const handleAuthSuccess = (user: User, token: string) => {
+    setUser(user);
+    setIsAuthenticated(true);
+    fetchUserFiles();
   };
 
   const handleLogout = () => {
     localStorage.removeItem("token");
     setIsAuthenticated(false);
     setUser(null);
-    setUploadedFiles([]);
-    setUploadResults([]);
     setUserFiles([]);
-    setError("");
+    setUploadError("");
   };
 
-  // Accepted file types
-  const acceptedTypes = {
-    "application/pdf": [".pdf"],
-    "image/jpeg": [".jpg", ".jpeg"],
-    "image/png": [".png"],
-    "image/gif": [".gif"],
-    "image/webp": [".webp"],
-    "text/plain": [".txt"],
-    "text/markdown": [".md"],
-    "application/msword": [".doc"],
-  };
+  // Check for existing token on mount
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    if (token) {
+      setIsAuthenticated(true);
+      fetchUserFiles();
+    }
+  }, []);
 
-  const acceptString =
-    Object.keys(acceptedTypes).join(",") +
-    "," +
-    Object.values(acceptedTypes).flat().join(",");
+  // Get unique categories
+  const categories = useMemo(() => {
+    const uniqueCategories = [
+      ...new Set(userFiles.map((file) => file.aiMetadata.category)),
+    ];
+    return uniqueCategories.filter(Boolean).sort();
+  }, [userFiles]);
 
-  const validateFile = (file: File): boolean => {
-    const isValidType =
-      Object.keys(acceptedTypes).includes(file.type) ||
-      Object.values(acceptedTypes)
-        .flat()
-        .some((ext) => file.name.toLowerCase().endsWith(ext));
+  // Filter and sort files
+  const filteredAndSortedFiles = useMemo(() => {
+    let filtered = userFiles;
 
-    if (!isValidType) {
-      setError(
-        `File "${file.name}" is not a supported format. Please upload PDF, DOC, images (PNG, JPG, GIF, WebP), or text files (TXT, MD) only.`
+    // Search filter
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase();
+      filtered = filtered.filter(
+        (file) =>
+          (file.originalName &&
+            file.originalName.toLowerCase().includes(term)) ||
+          (file.aiMetadata?.aiName &&
+            file.aiMetadata.aiName.toLowerCase().includes(term)) ||
+          (file.aiMetadata?.description &&
+            file.aiMetadata.description.toLowerCase().includes(term)) ||
+          (file.aiMetadata?.category &&
+            file.aiMetadata.category.toLowerCase().includes(term)) ||
+          (file.aiMetadata?.tags &&
+            file.aiMetadata.tags.some(
+              (tag) => tag && tag.toLowerCase().includes(term)
+            )) ||
+          (file.aiMetadata?.sensitiveDataTags &&
+            file.aiMetadata.sensitiveDataTags.some(
+              (tag) => tag && tag.toLowerCase().includes(term)
+            ))
       );
-      return false;
     }
 
-    // Check file size (10MB limit)
-    const maxSize = 10 * 1024 * 1024; // 10MB
-    if (file.size > maxSize) {
-      setError(`File "${file.name}" is too large. Maximum size is 10MB.`);
-      return false;
+    // Category filter
+    if (selectedCategory) {
+      filtered = filtered.filter(
+        (file) => file.aiMetadata?.category === selectedCategory
+      );
     }
 
-    return true;
-  };
+    // Sensitive data filter
+    if (showSensitiveOnly) {
+      filtered = filtered.filter((file) => file.aiMetadata?.sensitiveData);
+    }
 
-  const handleFiles = (files: FileList | null) => {
-    if (!files) return;
+    // Sort
+    filtered.sort((a, b) => {
+      let aValue, bValue;
 
-    setError("");
-    const validFiles: File[] = [];
-
-    Array.from(files).forEach((file) => {
-      if (validateFile(file)) {
-        validFiles.push(file);
+      if (sortBy === "aiMetadata.confidence") {
+        aValue = a.aiMetadata?.confidence || 0;
+        bValue = b.aiMetadata?.confidence || 0;
+      } else if (sortBy === "aiMetadata.category") {
+        aValue = a.aiMetadata?.category || "";
+        bValue = b.aiMetadata?.category || "";
+      } else if (sortBy === "originalName") {
+        aValue = (a.originalName || "").toLowerCase();
+        bValue = (b.originalName || "").toLowerCase();
+      } else if (sortBy === "size") {
+        aValue = a.size || 0;
+        bValue = b.size || 0;
+      } else {
+        // Default to uploadedAt
+        aValue = new Date(a.uploadedAt || 0).getTime();
+        bValue = new Date(b.uploadedAt || 0).getTime();
       }
+
+      if (aValue < bValue) return sortOrder === "asc" ? -1 : 1;
+      if (aValue > bValue) return sortOrder === "asc" ? 1 : -1;
+      return 0;
     });
 
-    if (validFiles.length > 0) {
-      setUploadedFiles((prev) => [...prev, ...validFiles]);
-    }
-  };
+    return filtered;
+  }, [
+    userFiles,
+    searchTerm,
+    selectedCategory,
+    showSensitiveOnly,
+    sortBy,
+    sortOrder,
+  ]);
 
-  const handleDrag = (e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.type === "dragenter" || e.type === "dragover") {
-      setDragActive(true);
-    } else if (e.type === "dragleave") {
-      setDragActive(false);
-    }
-  };
+  // Group files by category
+  const filesByCategory = useMemo(() => {
+    const grouped: { [category: string]: UserFile[] } = {};
 
-  const handleDrop = (e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(false);
-    handleFiles(e.dataTransfer.files);
-  };
-
-  const handleInputChange = (e: ChangeEvent<HTMLInputElement>) => {
-    handleFiles(e.target.files);
-  };
-
-  const removeFile = (index: number) => {
-    setUploadedFiles((prev) => prev.filter((_, i) => i !== index));
-  };
-
-  const formatFileSize = (bytes: number): string => {
-    if (bytes === 0) return "0 Bytes";
-    const k = 1024;
-    const sizes = ["Bytes", "KB", "MB", "GB"];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
-  };
-
-  const getFileIcon = (file: File): string => {
-    if (file.type.startsWith("image/")) return "🖼️";
-    if (file.type === "application/pdf") return "📄";
-    if (file.type === "application/msword") return "📝";
-    if (file.type === "text/plain") return "📄";
-    if (file.type === "text/markdown") return "📝";
-    return "📎";
-  };
-
-  const handleUpload = async () => {
-    if (uploadedFiles.length === 0) return;
-
-    setUploading(true);
-    setError("");
-
-    try {
-      const formData = new FormData();
-      uploadedFiles.forEach((file) => {
-        formData.append("files", file);
-      });
-
-      const token = localStorage.getItem("token");
-      const response = await fetch("/api/upload", {
-        method: "POST",
-        headers: {
-          ...(token && { Authorization: `Bearer ${token}` }),
-        },
-        body: formData,
-      });
-
-      const result = await response.json();
-
-      if (result.success) {
-        setUploadResults(result.uploadedFiles);
-        setUploadedFiles([]);
-        // Refresh user files after successful upload
-        fetchUserFiles();
-        alert(`Successfully uploaded ${result.uploadedFiles.length} file(s)!`);
-      } else {
-        setError(result.error || "Upload failed");
+    filteredAndSortedFiles.forEach((file) => {
+      const category = file.aiMetadata?.category || "Ukategorisert";
+      if (!grouped[category]) {
+        grouped[category] = [];
       }
-    } catch (uploadError) {
-      console.error("Upload error:", uploadError);
-      setError("Failed to upload files. Please try again.");
-    } finally {
-      setUploading(false);
-    }
+      grouped[category].push(file);
+    });
+
+    // Sort categories alphabetically, but put "Ukategorisert" last
+    const sortedCategories = Object.keys(grouped).sort((a, b) => {
+      if (a === "Ukategorisert") return 1;
+      if (b === "Ukategorisert") return -1;
+      return a.localeCompare(b, "no");
+    });
+
+    const sortedGrouped: { [category: string]: UserFile[] } = {};
+    sortedCategories.forEach((category) => {
+      sortedGrouped[category] = grouped[category];
+    });
+
+    return sortedGrouped;
+  }, [filteredAndSortedFiles]);
+
+  // Helper functions for notifications
+  const showToast = (
+    type: "success" | "error" | "warning" | "info",
+    title: string,
+    message?: string
+  ) => {
+    const id = Math.random().toString(36).substr(2, 9);
+    setToasts((prev) => [...prev, { id, type, title, message }]);
   };
 
-  // Render authentication forms
+  const removeToast = (id: string) => {
+    setToasts((prev) => prev.filter((toast) => toast.id !== id));
+  };
+
+  const showConfirmModal = (
+    title: string,
+    message: string,
+    onConfirm: () => void
+  ) => {
+    setConfirmModal({
+      isOpen: true,
+      title,
+      message,
+      onConfirm,
+    });
+  };
+
+  const hideConfirmModal = () => {
+    setConfirmModal((prev) => ({ ...prev, isOpen: false }));
+  };
+
+  // Show authentication form if not logged in
   if (!isAuthenticated) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-8">
-        <div className="max-w-md w-full">
-          <div className="bg-white rounded-lg shadow-lg p-8">
-            <div className="text-center mb-8">
-              <h1 className="text-3xl font-bold text-gray-900 mb-2">
-                {authMode === "login" ? "Welcome Back" : "Create Account"}
-              </h1>
-              <p className="text-gray-600">
-                {authMode === "login"
-                  ? "Sign in to access file upload"
-                  : "Sign up to start uploading files"}
-              </p>
+    return <AuthForm onAuthSuccess={handleAuthSuccess} />;
+  }
+
+  // Main application layout
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-slate-100">
+      {/* Header */}
+      <div className="bg-white border-b border-gray-200 shadow-sm">
+        <div className="px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-4">
+              <div className="flex items-center justify-center w-10 h-10 bg-blue-600 rounded-lg">
+                <svg
+                  className="w-6 h-6 text-white"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                  />
+                </svg>
+              </div>
+              <div>
+                <h1 className="text-xl font-bold text-gray-900">
+                  Document Manager
+                </h1>
+                <p className="text-sm text-gray-500">
+                  AI-powered file organization
+                </p>
+              </div>
             </div>
-
-            <form onSubmit={handleAuth} className="space-y-6">
-              <div>
-                <label
-                  htmlFor="email"
-                  className="block text-sm font-medium text-gray-700 mb-2"
-                >
-                  Email
-                </label>
-                <input
-                  id="email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Enter your email"
-                />
+            <div className="flex items-center space-x-4">
+              <div className="text-right">
+                <p className="text-sm text-gray-600">Welcome back!</p>
+                <p className="text-sm font-medium text-gray-900">
+                  {user?.email}
+                </p>
               </div>
-
-              <div>
-                <label
-                  htmlFor="password"
-                  className="block text-sm font-medium text-gray-700 mb-2"
-                >
-                  Password
-                </label>
-                <input
-                  id="password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Enter your password"
-                />
-              </div>
-
-              {authError && (
-                <div className="p-4 bg-red-50 border border-red-200 rounded-md">
-                  <p className="text-red-700 text-sm">{authError}</p>
-                </div>
-              )}
-
               <button
-                type="submit"
-                disabled={authLoading}
-                className="w-full py-2 px-4 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors duration-200 font-medium"
+                onClick={handleLogout}
+                className="px-4 py-2 text-sm font-medium bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors shadow-sm"
               >
-                {authLoading
-                  ? authMode === "login"
-                    ? "Signing in..."
-                    : "Creating account..."
-                  : authMode === "login"
-                  ? "Sign In"
-                  : "Sign Up"}
+                <span className="flex items-center">
+                  <svg
+                    className="w-4 h-4 mr-2"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
+                    />
+                  </svg>
+                  Logout
+                </span>
               </button>
-            </form>
-
-            <div className="mt-6 text-center">
-              <p className="text-gray-600">
-                {authMode === "login"
-                  ? "Don't have an account?"
-                  : "Already have an account?"}
-                <button
-                  onClick={() => {
-                    setAuthMode(authMode === "login" ? "signup" : "login");
-                    setAuthError("");
-                  }}
-                  className="ml-2 text-blue-600 hover:text-blue-800 font-medium"
-                >
-                  {authMode === "login" ? "Sign up" : "Sign in"}
-                </button>
-              </p>
             </div>
           </div>
         </div>
       </div>
-    );
-  }
 
-  // Render file upload interface (authenticated users only)
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-8">
-      <div className="max-w-2xl mx-auto">
-        {/* Header with user info and logout */}
-        <div className="flex justify-between items-center mb-8">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">
-              File Upload
-            </h1>
-            <p className="text-gray-600">
-              Upload documents and files for AI analysis
-            </p>
-          </div>
-          <div className="text-right">
-            <p className="text-sm text-gray-600 mb-2">Welcome, {user?.email}</p>
-            <button
-              onClick={handleLogout}
-              className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors duration-200 text-sm"
-            >
-              Logout
-            </button>
+      {/* Main Content */}
+      <div className="flex h-[calc(100vh-81px)]">
+        {/* Left Panel - File Upload */}
+        <div className="w-80 bg-white border-r border-gray-200 shadow-sm overflow-y-auto scrollbar-thin">
+          <div className="p-6">
+            <FileUpload
+              onUpload={handleUpload}
+              uploading={uploading}
+              error={uploadError}
+              uploadingFiles={uploadingFiles}
+              onDismissUploadStatus={handleDismissUploadStatus}
+            />
           </div>
         </div>
 
-        {/* Upload Area */}
-        <div
-          className={`relative border-2 border-dashed rounded-lg p-8 text-center transition-all duration-200 ${
-            dragActive
-              ? "border-blue-500 bg-blue-50"
-              : "border-gray-300 bg-white hover:border-gray-400"
-          }`}
-          onDragEnter={handleDrag}
-          onDragLeave={handleDrag}
-          onDragOver={handleDrag}
-          onDrop={handleDrop}
-        >
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            accept={acceptString}
-            onChange={handleInputChange}
-            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+        {/* Right Panel - Files */}
+        <div className="flex-1 flex flex-col">
+          {/* Filters Panel */}
+          <FiltersPanel
+            searchTerm={searchTerm}
+            onSearchChange={setSearchTerm}
+            sortBy={sortBy}
+            onSortChange={setSortBy}
+            sortOrder={sortOrder}
+            onSortOrderChange={setSortOrder}
+            selectedCategory={selectedCategory}
+            onCategoryChange={setSelectedCategory}
+            categories={categories}
+            showSensitiveOnly={showSensitiveOnly}
+            onSensitiveFilterChange={setShowSensitiveOnly}
+            fileCount={filteredAndSortedFiles.length}
+            showAINames={showAINames}
+            onNameToggle={() => setShowAINames(!showAINames)}
+            onRefresh={fetchUserFiles}
+            refreshing={loadingFiles}
           />
 
-          <div className="space-y-4">
-            <div className="text-6xl">📁</div>
-            <div>
-              <p className="text-lg font-medium text-gray-900">
-                Drop files here or click to browse
-              </p>
-              <p className="text-sm text-gray-500 mt-2">
-                Supports PDF, DOC, images (JPG, PNG, GIF, WebP), and text files
-                (TXT, MD)
-              </p>
-              <p className="text-xs text-gray-400 mt-1">
-                Maximum file size: 10MB
-              </p>
-            </div>
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors duration-200"
-            >
-              Choose Files
-            </button>
-          </div>
-        </div>
-
-        {/* Error Message */}
-        {error && (
-          <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-md">
-            <p className="text-red-700 text-sm">{error}</p>
-          </div>
-        )}
-
-        {/* Uploaded Files List */}
-        {uploadedFiles.length > 0 && (
-          <div className="mt-8">
-            <h2 className="text-xl font-semibold text-gray-900 mb-4">
-              Uploaded Files ({uploadedFiles.length})
-            </h2>
-            <div className="space-y-3">
-              {uploadedFiles.map((file, index) => (
-                <div
-                  key={index}
-                  className="flex items-center justify-between p-4 bg-white rounded-lg border border-gray-200 shadow-sm"
-                >
-                  <div className="flex items-center space-x-3">
-                    <span className="text-2xl">{getFileIcon(file)}</span>
-                    <div>
-                      <p className="font-medium text-gray-900">{file.name}</p>
-                      <p className="text-sm text-gray-500">
-                        {formatFileSize(file.size)} •{" "}
-                        {file.type || "Unknown type"}
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => removeFile(index)}
-                    className="text-red-500 hover:text-red-700 transition-colors duration-200"
-                    title="Remove file"
-                  >
-                    <svg
-                      className="w-5 h-5"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M6 18L18 6M6 6l12 12"
-                      />
-                    </svg>
-                  </button>
+          {/* Files List */}
+          <div className="flex-1 overflow-y-auto bg-white scrollbar-thin">
+            {loadingFiles ? (
+              <div className="flex items-center justify-center h-64">
+                <div className="text-center">
+                  <div className="inline-block animate-spin rounded-full h-12 w-12 border-4 border-blue-200 border-t-blue-600 mb-4"></div>
+                  <p className="text-gray-600 font-medium">
+                    Loading your files...
+                  </p>
+                  <p className="text-gray-500 text-sm">
+                    This may take a moment
+                  </p>
                 </div>
-              ))}
-            </div>
-
-            {/* Upload Button */}
-            <div className="mt-6 text-center">
-              <button
-                onClick={handleUpload}
-                disabled={uploading}
-                className="px-6 py-3 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors duration-200 font-medium"
-              >
-                {uploading
-                  ? "Uploading..."
-                  : `Upload ${uploadedFiles.length} File${
-                      uploadedFiles.length !== 1 ? "s" : ""
-                    }`}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Successfully Uploaded Files */}
-        {uploadResults.length > 0 && (
-          <div className="mt-8">
-            <h2 className="text-xl font-semibold text-gray-900 mb-4">
-              Successfully Uploaded Files ({uploadResults.length})
-            </h2>
-            <div className="space-y-3">
-              {uploadResults.map((file, index) => (
-                <div
-                  key={index}
-                  className="flex items-center justify-between p-4 bg-green-50 rounded-lg border border-green-200 shadow-sm"
-                >
-                  <div className="flex items-center space-x-3">
-                    <span className="text-2xl">✅</span>
-                    <div>
-                      <p className="font-medium text-gray-900">
-                        {showAINames
-                          ? file.aiMetadata.aiName
-                          : file.originalName}
-                      </p>
-                      <p className="text-sm text-gray-500">
-                        {formatFileSize(file.size)} • {file.type}
-                      </p>
-                      {file.s3Key && (
-                        <button
-                          onClick={async () => {
-                            const freshUrl = await getFreshFileUrl(file.id);
-                            if (freshUrl) {
-                              window.open(freshUrl, "_blank");
-                            } else {
-                              alert(
-                                "Failed to generate file access URL. Please try again."
-                              );
-                            }
-                          }}
-                          className="text-sm text-blue-600 hover:text-blue-800 underline bg-none border-none cursor-pointer"
-                        >
-                          View file
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  <button
-                    onClick={async () => {
-                      if (file.s3Key) {
-                        const freshUrl = await getFreshFileUrl(file.id);
-                        if (freshUrl) {
-                          navigator.clipboard.writeText(freshUrl);
-                          alert("URL copied to clipboard!");
-                        } else {
-                          alert(
-                            "Failed to generate file access URL. Please try again."
-                          );
-                        }
-                      }
-                    }}
-                    className="text-blue-500 hover:text-blue-700 transition-colors duration-200"
-                    title="Copy URL"
-                  >
-                    <svg
-                      className="w-5 h-5"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
+              </div>
+            ) : filteredAndSortedFiles.length === 0 ? (
+              <div className="flex items-center justify-center h-64">
+                <div className="text-center max-w-md">
+                  <div className="text-6xl text-gray-300 mb-4">📁</div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">
+                    {userFiles.length === 0
+                      ? "No files yet"
+                      : "No matches found"}
+                  </h3>
+                  <p className="text-gray-600">
+                    {userFiles.length === 0
+                      ? "Upload your first file using the panel on the left to get started!"
+                      : "Try adjusting your search terms or filters to find what you're looking for."}
+                  </p>
+                  {userFiles.length > 0 && (
+                    <button
+                      onClick={() => {
+                        setSearchTerm("");
+                        setSelectedCategory("");
+                        setShowSensitiveOnly(false);
+                      }}
+                      className="mt-4 px-4 py-2 text-sm font-medium text-blue-600 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
                     >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-                      />
-                    </svg>
-                  </button>
+                      Clear all filters
+                    </button>
+                  )}
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* User's Files Library */}
-        <div className="mt-8">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-semibold text-gray-900">
-              Your Files ({userFiles.length})
-            </h2>
-            <div className="flex items-center space-x-3">
-              <button
-                onClick={() => setShowAINames(!showAINames)}
-                className={`px-3 py-1 text-sm rounded-md transition-colors duration-200 ${
-                  showAINames
-                    ? "bg-green-100 text-green-800 border border-green-300"
-                    : "bg-gray-100 text-gray-800 border border-gray-300"
-                }`}
-                title={
-                  showAINames
-                    ? "Switch to original names"
-                    : "Switch to AI names"
-                }
-              >
-                {showAINames ? "AI Names" : "Original Names"}
-              </button>
-              <button
-                onClick={fetchUserFiles}
-                disabled={loadingFiles}
-                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 transition-colors duration-200 text-sm"
-              >
-                {loadingFiles ? "Loading..." : "Refresh"}
-              </button>
-            </div>
-          </div>
-
-          {loadingFiles ? (
-            <div className="text-center py-8">
-              <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-              <p className="mt-2 text-gray-600">Loading your files...</p>
-            </div>
-          ) : userFiles.length === 0 ? (
-            <div className="text-center py-8 bg-gray-50 rounded-lg">
-              <p className="text-gray-600">
-                No files uploaded yet. Upload your first file above!
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {userFiles.map((file) => (
-                <div
-                  key={file.id}
-                  className="p-6 bg-white rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-shadow duration-200"
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-start space-x-4 flex-1">
-                      <span className="text-3xl">
-                        {getFileIcon({
-                          name: file.originalName,
-                          type: file.type,
-                        } as File)}
-                      </span>
-                      <div className="flex-1">
-                        <div className="flex items-center space-x-2 mb-2">
-                          <h3 className="font-medium text-gray-900">
-                            {showAINames
-                              ? file.aiMetadata.aiName
-                              : file.originalName}
-                          </h3>
-                          <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">
-                            {file.aiMetadata.category}
-                          </span>
-                          {file.aiMetadata.sensitiveData && (
-                            <span className="px-2 py-1 bg-red-100 text-red-800 text-xs rounded-full">
-                              🔒 Sensitive Data
-                            </span>
-                          )}
+              </div>
+            ) : (
+              <div className="p-4">
+                {Object.entries(filesByCategory).map(([category, files]) => {
+                  const isCollapsed = collapsedCategories.has(category);
+                  return (
+                    <div key={category} className="mb-8">
+                      {/* Category Header */}
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center space-x-3">
+                          <div className="w-1 h-8 bg-blue-600 rounded"></div>
+                          <div>
+                            <h2 className="text-lg font-semibold text-gray-900">
+                              {category}
+                            </h2>
+                            <p className="text-sm text-gray-500">
+                              {files.length}{" "}
+                              {files.length === 1 ? "dokument" : "dokumenter"}
+                            </p>
+                          </div>
                         </div>
-
-                        <p className="text-sm text-gray-600 mb-3">
-                          {file.aiMetadata.description}
-                        </p>
-
-                        {file.aiMetadata.sensitiveDataTags &&
-                          file.aiMetadata.sensitiveDataTags.length > 0 && (
-                            <div className="mb-3">
-                              <div className="text-xs text-red-600 font-medium mb-1">
-                                Sensitive Data Tags:
-                              </div>
-                              <div className="flex flex-wrap gap-1">
-                                {file.aiMetadata.sensitiveDataTags.map(
-                                  (tag, tagIndex) => (
-                                    <span
-                                      key={tagIndex}
-                                      className="px-2 py-1 bg-red-50 text-red-700 text-xs rounded border border-red-200"
-                                    >
-                                      {tag}
-                                    </span>
-                                  )
-                                )}
-                              </div>
-                            </div>
-                          )}
-
-                        <div className="flex flex-wrap gap-1 mb-3">
-                          {file.aiMetadata.tags &&
-                            file.aiMetadata.tags.map((tag, tagIndex) => (
-                              <span
-                                key={tagIndex}
-                                className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded"
-                              >
-                                {tag}
-                              </span>
-                            ))}
+                        <div className="flex items-center space-x-2">
+                          <div className="text-xs text-gray-400 bg-gray-100 px-2 py-1 rounded">
+                            {files.length}
+                          </div>
+                          <button
+                            onClick={() => toggleCategoryCollapse(category)}
+                            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                            title={isCollapsed ? "Vis filer" : "Skjul filer"}
+                          >
+                            <svg
+                              className={`w-4 h-4 transform transition-transform duration-200 ${
+                                isCollapsed ? "rotate-0" : "rotate-180"
+                              }`}
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M19 9l-7 7-7-7"
+                              />
+                            </svg>
+                          </button>
                         </div>
+                      </div>
 
-                        <div className="flex items-center space-x-4 text-sm text-gray-500">
-                          <span>{formatFileSize(file.size)}</span>
-                          <span>•</span>
-                          <span>{file.type}</span>
-                          <span>•</span>
-                          <span>
-                            Confidence:{" "}
-                            {Math.round(file.aiMetadata.confidence * 100)}%
-                          </span>
-                          <span>•</span>
-                          <span>
-                            {new Date(file.uploadedAt).toLocaleDateString()}
-                          </span>
+                      {/* Files in this category - with collapse animation */}
+                      <div
+                        className={`transition-all duration-300 ease-in-out overflow-hidden ${
+                          isCollapsed
+                            ? "max-h-0 opacity-0"
+                            : "max-h-none opacity-100"
+                        }`}
+                      >
+                        <div className="bg-white rounded-lg border border-gray-200 divide-y divide-gray-100 shadow-sm">
+                          {files.map((file) => (
+                            <FileItem
+                              key={file.id}
+                              file={file}
+                              showAINames={showAINames}
+                              onView={handleViewFile}
+                              onCopyUrl={handleCopyUrl}
+                              onDelete={handleDeleteFile}
+                            />
+                          ))}
                         </div>
                       </div>
                     </div>
-
-                    <div className="flex items-center space-x-2 ml-4">
-                      <button
-                        onClick={async () => {
-                          const freshUrl = await getFreshFileUrl(file.id);
-                          if (freshUrl) {
-                            window.open(freshUrl, "_blank");
-                          } else {
-                            alert(
-                              "Failed to generate file access URL. Please try again."
-                            );
-                          }
-                        }}
-                        className="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 transition-colors duration-200"
-                      >
-                        View
-                      </button>
-                      <button
-                        onClick={async () => {
-                          const freshUrl = await getFreshFileUrl(file.id);
-                          if (freshUrl) {
-                            navigator.clipboard.writeText(freshUrl);
-                            alert("URL copied to clipboard!");
-                          } else {
-                            alert(
-                              "Failed to generate file access URL. Please try again."
-                            );
-                          }
-                        }}
-                        className="p-1 text-gray-500 hover:text-gray-700 transition-colors duration-200"
-                        title="Copy URL"
-                      >
-                        <svg
-                          className="w-4 h-4"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-                          />
-                        </svg>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
       </div>
+
+      {/* Modal and Toast Components */}
+      <ConfirmationModal
+        isOpen={confirmModal.isOpen}
+        title={confirmModal.title}
+        message={confirmModal.message}
+        confirmText="Slett"
+        cancelText="Avbryt"
+        onConfirm={confirmModal.onConfirm}
+        onCancel={hideConfirmModal}
+        type="danger"
+      />
+
+      <ToastContainer toasts={toasts} onRemoveToast={removeToast} />
     </div>
   );
 }
