@@ -5,7 +5,7 @@ import { createCanvas } from "canvas";
  */
 export async function convertTextToImage(
   textBuffer: Buffer,
-  fileName: string
+  _fileName: string
 ): Promise<Buffer> {
   try {
     console.log("Starting text to image conversion using Canvas");

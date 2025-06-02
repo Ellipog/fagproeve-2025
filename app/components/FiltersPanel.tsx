@@ -323,7 +323,7 @@ export default function FiltersPanel({
 
               {searchTerm && (
                 <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800 border border-blue-200">
-                  "{searchTerm}"
+                  &ldquo;{searchTerm}&rdquo;
                   <button
                     onClick={() => onSearchChange("")}
                     className="ml-1 inline-flex items-center justify-center w-4 h-4 text-blue-600 hover:text-blue-800 hover:bg-blue-200 rounded-full transition-colors"

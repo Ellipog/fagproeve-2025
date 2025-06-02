@@ -3,7 +3,6 @@
 import { useState } from "react";
 
 export default function TestConversionPage() {
-  const [selectedType, setSelectedType] = useState("pdf");
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -199,8 +198,8 @@ export default function TestConversionPage() {
         <div className="mt-6 bg-green-50 border border-green-200 rounded-lg p-4">
           <p className="text-green-800 text-sm">
             <strong>✓ Updated:</strong> PDF files are now handled natively by
-            OpenAI's vision models, providing better accuracy and eliminating
-            the need for PDF-to-image conversion.
+            OpenAI&apos;s vision models, providing better accuracy and
+            eliminating the need for PDF-to-image conversion.
           </p>
         </div>
       </div>

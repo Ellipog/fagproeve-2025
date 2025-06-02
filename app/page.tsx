@@ -40,17 +40,6 @@ interface UserFile {
   uploadedAt: string;
 }
 
-interface UploadResult {
-  id: string;
-  originalName: string;
-  fileName: string;
-  s3Key: string;
-  size: number;
-  type: string;
-  aiMetadata: AIMetadata;
-  uploadedAt: string;
-}
-
 export default function Home() {
   // Authentication state
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -376,7 +365,7 @@ export default function Home() {
   };
 
   // Authentication handlers
-  const handleAuthSuccess = (user: User, token: string) => {
+  const handleAuthSuccess = (user: User, _token: string) => {
     setUser(user);
     setIsAuthenticated(true);
     fetchUserFiles();

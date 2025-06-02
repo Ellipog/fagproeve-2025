@@ -108,8 +108,22 @@ export async function POST(request: NextRequest) {
       s3Key: string;
       size: number;
       type: string;
-      aiMetadata: any;
+      aiMetadata: AIMetadata;
       uploadedAt: Date;
+    }
+
+    interface AIMetadata {
+      category?: string;
+      isCustomCategory?: boolean;
+      tags?: string[];
+      sensitiveData?: boolean;
+      sensitiveDataTags?: string[];
+      confidence?: number;
+      language?: string;
+      description?: string;
+      aiName?: string;
+      processingStatus: "pending" | "completed" | "failed";
+      lastAnalyzed: Date;
     }
 
     // Process files in parallel using Promise.allSettled
@@ -152,7 +166,7 @@ export async function POST(request: NextRequest) {
           }
 
           // AI Analysis Integration
-          let aiMetadata;
+          let aiMetadata: AIMetadata;
           try {
             console.log(`Starting AI analysis for file: ${file.name}`);
             const aiAnalysis = await analyzeDocument(

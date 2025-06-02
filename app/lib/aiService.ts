@@ -3,12 +3,11 @@ import {
   PREDEFINED_CATEGORIES,
   PREDEFINED_TAGS,
   PREDEFINED_SENSITIVE_DATA_TAGS,
-  DEFAULT_CONFIDENCE_THRESHOLD,
 } from "./constants";
 import { convertDocumentToImage } from "@/app/utils/documentToImage";
 
 const Prompt = (
-  category: string[],
+  categories: string[],
   tags: string[],
   sensitiveDataTags: string[]
 ) => {
@@ -25,9 +24,9 @@ const Prompt = (
   "aiName": "kort navn"
 }
 
-Tilgjengelige kategorier: ${PREDEFINED_CATEGORIES.join(", ")}
-Tilgjengelige generelle tags: ${PREDEFINED_TAGS.join(", ")}
-Tilgjengelige sensitive data tags: ${PREDEFINED_SENSITIVE_DATA_TAGS.join(", ")}
+Tilgjengelige kategorier: ${categories.join(", ")}
+Tilgjengelige generelle tags: ${tags.join(", ")}
+Tilgjengelige sensitive data tags: ${sensitiveDataTags.join(", ")}
 
 Retningslinjer:
 - Alt skal være på norsk

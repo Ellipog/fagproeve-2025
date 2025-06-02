@@ -1,9 +1,4 @@
 // Fallback AI metadata generator for when AI analysis fails
-import {
-  PREDEFINED_CATEGORIES,
-  PREDEFINED_TAGS,
-  PREDEFINED_SENSITIVE_DATA_TAGS,
-} from "@/app/lib/constants";
 
 export interface AIMetadata {
   category: string;

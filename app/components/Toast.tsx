@@ -19,7 +19,6 @@ export default function Toast({
   duration = 5000,
   onRemove,
 }: ToastProps) {
-  const [isVisible, setIsVisible] = useState(true);
   const [isExiting, setIsExiting] = useState(false);
 
   useEffect(() => {
