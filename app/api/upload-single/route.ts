@@ -145,26 +145,45 @@ export async function POST(request: NextRequest) {
           contentType
         );
 
-        aiMetadata = {
-          category: aiAnalysis?.category,
-          isCustomCategory: aiAnalysis?.isCustomCategory,
-          tags: aiAnalysis?.tags,
-          sensitiveData: aiAnalysis?.sensitiveData,
-          sensitiveDataTags: aiAnalysis?.sensitiveDataTags,
-          confidence: aiAnalysis?.confidence,
-          language: aiAnalysis?.language,
-          description: aiAnalysis?.description,
-          aiName: aiAnalysis?.aiName,
-          processingStatus: "completed" as const,
-          lastAnalyzed: new Date(),
-        };
+        // Validate and ensure required fields are present
+        if (
+          aiAnalysis &&
+          aiAnalysis.category &&
+          typeof aiAnalysis.confidence === "number"
+        ) {
+          aiMetadata = {
+            category: aiAnalysis.category,
+            isCustomCategory: aiAnalysis.isCustomCategory || false,
+            tags: aiAnalysis.tags || [],
+            sensitiveData: aiAnalysis.sensitiveData || false,
+            sensitiveDataTags: aiAnalysis.sensitiveDataTags || [],
+            confidence: aiAnalysis.confidence,
+            language: aiAnalysis.language || "no",
+            description:
+              aiAnalysis.description || "Dokument lastet opp til systemet",
+            aiName: aiAnalysis.aiName || "Dokument",
+            processingStatus: "completed" as const,
+            lastAnalyzed: new Date(),
+          };
 
-        console.log(`AI analysis completed for ${file.name}:`, {
-          category: aiAnalysis?.category,
-          tags: aiAnalysis?.tags,
-          sensitiveData: aiAnalysis?.sensitiveData,
-          confidence: aiAnalysis?.confidence,
-        });
+          console.log(`AI analysis completed for ${file.name}:`, {
+            category: aiAnalysis.category,
+            tags: aiAnalysis.tags,
+            sensitiveData: aiAnalysis.sensitiveData,
+            confidence: aiAnalysis.confidence,
+          });
+        } else {
+          console.warn(
+            `AI analysis returned invalid data for ${file.name}, using fallback`
+          );
+          // Use fallback if analysis returned invalid data
+          aiMetadata = generateDummyAIMetadata(
+            file.name,
+            contentType,
+            file.size
+          );
+          aiMetadata.processingStatus = "failed";
+        }
       } catch (aiError) {
         console.warn(
           `AI analysis failed for ${file.name}, using fallback:`,
