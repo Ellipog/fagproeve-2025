@@ -10,7 +10,7 @@
 ### 1. Install Dependencies
 
 ```bash
-git clone https://github.com/your-username/fagproeve-2025.git
+git clone https://github.com/ellipog/fagproeve-2025.git
 cd fagproeve-2025
 npm install
 # or
