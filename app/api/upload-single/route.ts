@@ -146,24 +146,24 @@ export async function POST(request: NextRequest) {
         );
 
         aiMetadata = {
-          category: aiAnalysis?.category,
-          isCustomCategory: aiAnalysis?.isCustomCategory,
-          tags: aiAnalysis?.tags,
-          sensitiveData: aiAnalysis?.sensitiveData,
-          sensitiveDataTags: aiAnalysis?.sensitiveDataTags,
-          confidence: aiAnalysis?.confidence,
-          language: aiAnalysis?.language,
-          description: aiAnalysis?.description,
-          aiName: aiAnalysis?.aiName,
+          category: aiAnalysis.category,
+          isCustomCategory: aiAnalysis.isCustomCategory,
+          tags: aiAnalysis.tags,
+          sensitiveData: aiAnalysis.sensitiveData,
+          sensitiveDataTags: aiAnalysis.sensitiveDataTags,
+          confidence: aiAnalysis.confidence,
+          language: aiAnalysis.language,
+          description: aiAnalysis.description,
+          aiName: aiAnalysis.aiName,
           processingStatus: "completed" as const,
           lastAnalyzed: new Date(),
         };
 
         console.log(`AI analysis completed for ${file.name}:`, {
-          category: aiAnalysis?.category,
-          tags: aiAnalysis?.tags,
-          sensitiveData: aiAnalysis?.sensitiveData,
-          confidence: aiAnalysis?.confidence,
+          category: aiAnalysis.category,
+          tags: aiAnalysis.tags,
+          sensitiveData: aiAnalysis.sensitiveData,
+          confidence: aiAnalysis.confidence,
         });
       } catch (aiError) {
         console.warn(

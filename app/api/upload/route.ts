@@ -113,15 +113,15 @@ export async function POST(request: NextRequest) {
     }
 
     interface AIMetadata {
-      category?: string;
-      isCustomCategory?: boolean;
-      tags?: string[];
-      sensitiveData?: boolean;
-      sensitiveDataTags?: string[];
-      confidence?: number;
-      language?: string;
-      description?: string;
-      aiName?: string;
+      category: string;
+      isCustomCategory: boolean;
+      tags: string[];
+      sensitiveData: boolean;
+      sensitiveDataTags: string[];
+      confidence: number;
+      language: string;
+      description: string;
+      aiName: string;
       processingStatus: "pending" | "completed" | "failed";
       lastAnalyzed: Date;
     }
@@ -176,28 +176,28 @@ export async function POST(request: NextRequest) {
             );
 
             aiMetadata = {
-              category: aiAnalysis?.category,
-              isCustomCategory: aiAnalysis?.isCustomCategory,
-              tags: aiAnalysis?.tags,
-              sensitiveData: aiAnalysis?.sensitiveData,
-              sensitiveDataTags: aiAnalysis?.sensitiveDataTags,
-              confidence: aiAnalysis?.confidence,
-              language: aiAnalysis?.language,
-              description: aiAnalysis?.description,
-              aiName: aiAnalysis?.aiName,
+              category: aiAnalysis.category,
+              isCustomCategory: aiAnalysis.isCustomCategory,
+              tags: aiAnalysis.tags,
+              sensitiveData: aiAnalysis.sensitiveData,
+              sensitiveDataTags: aiAnalysis.sensitiveDataTags,
+              confidence: aiAnalysis.confidence,
+              language: aiAnalysis.language,
+              description: aiAnalysis.description,
+              aiName: aiAnalysis.aiName,
               processingStatus: "completed" as const,
               lastAnalyzed: new Date(),
             };
 
             console.log(`AI analysis completed for ${file.name}:`, {
-              category: aiAnalysis?.category,
-              isCustomCategory: aiAnalysis?.isCustomCategory,
-              tags: aiAnalysis?.tags,
-              sensitiveData: aiAnalysis?.sensitiveData,
-              sensitiveDataTags: aiAnalysis?.sensitiveDataTags,
-              confidence: aiAnalysis?.confidence,
-              description: aiAnalysis?.description,
-              aiName: aiAnalysis?.aiName,
+              category: aiAnalysis.category,
+              isCustomCategory: aiAnalysis.isCustomCategory,
+              tags: aiAnalysis.tags,
+              sensitiveData: aiAnalysis.sensitiveData,
+              sensitiveDataTags: aiAnalysis.sensitiveDataTags,
+              confidence: aiAnalysis.confidence,
+              description: aiAnalysis.description,
+              aiName: aiAnalysis.aiName,
             });
           } catch (aiError) {
             console.warn(

@@ -5,6 +5,7 @@ import {
   PREDEFINED_SENSITIVE_DATA_TAGS,
 } from "./constants";
 import { convertDocumentToImage } from "@/app/utils/documentToImage";
+import { generateDummyAIMetadata } from "@/app/utils/aiMetadata";
 
 const Prompt = (
   categories: string[],
@@ -279,7 +280,7 @@ export async function analyzeDocument(
   fileBuffer: Buffer,
   fileName: string,
   mimeType: string
-) {
+): Promise<AIAnalysisResult> {
   try {
     console.log(`Starting document analysis for: ${fileName} (${mimeType})`);
 
@@ -307,5 +308,25 @@ export async function analyzeDocument(
     return await analyzeImageWithGPT4oMini(imageBuffer);
   } catch (error) {
     console.warn("Document analysis failed, using fallback:", error);
+
+    // Generate fallback metadata to ensure we always return a valid result
+    const fallbackMetadata = generateDummyAIMetadata(
+      fileName,
+      mimeType,
+      fileBuffer.length
+    );
+
+    // Convert to AIAnalysisResult format (remove processingStatus and lastAnalyzed)
+    return {
+      category: fallbackMetadata.category,
+      isCustomCategory: fallbackMetadata.isCustomCategory,
+      tags: fallbackMetadata.tags,
+      sensitiveData: fallbackMetadata.sensitiveData,
+      sensitiveDataTags: fallbackMetadata.sensitiveDataTags,
+      confidence: fallbackMetadata.confidence,
+      language: fallbackMetadata.language,
+      description: fallbackMetadata.description,
+      aiName: fallbackMetadata.aiName,
+    };
   }
 }
