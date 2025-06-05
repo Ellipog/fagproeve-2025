@@ -56,83 +56,126 @@ export interface AIAnalysisResult {
 }
 
 // Analyze PDF directly with OpenAI's native PDF support
-async function analyzePdfDirectly(
+export async function analyzePdfDirectly(
   pdfBuffer: Buffer,
   fileName: string
 ): Promise<AIAnalysisResult> {
-  try {
-    console.log("Analyzing PDF directly with OpenAI's native PDF support");
+  let fileId: string | null = null;
 
-    const openai = new OpenAI({
+  try {
+    console.log(`Starting direct PDF analysis for: ${fileName}`);
+
+    const openaiClient = new OpenAI({
       apiKey: process.env.OPENAI_API_KEY,
     });
 
-    // Create the analysis prompt
-    const prompt = Prompt(
-      PREDEFINED_CATEGORIES,
-      PREDEFINED_TAGS,
-      PREDEFINED_SENSITIVE_DATA_TAGS
-    );
-
     // Upload the PDF file to OpenAI
-    console.log("Uploading PDF file to OpenAI...");
-    const file = await openai.files.create({
+    const file = await openaiClient.files.create({
       file: new File([pdfBuffer], fileName, { type: "application/pdf" }),
-      purpose: "user_data",
+      purpose: "assistants",
     });
 
-    console.log(`PDF uploaded with file ID: ${file.id}`);
+    fileId = file.id;
+    console.log(`PDF uploaded to OpenAI with file ID: ${fileId}`);
 
-    // Create chat completion with file reference
-    const response = await openai.chat.completions.create({
-      model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+    // Create a chat completion with the file reference
+    const completion = await openaiClient.chat.completions.create({
+      model: "gpt-4o-mini",
       messages: [
         {
           role: "user",
           content: [
             {
-              type: "file",
-              file: {
-                file_id: file.id,
-              },
+              type: "text",
+              text: await Prompt(
+                PREDEFINED_CATEGORIES,
+                PREDEFINED_TAGS,
+                PREDEFINED_SENSITIVE_DATA_TAGS
+              ),
             },
             {
               type: "text",
-              text: prompt,
+              text: `Please analyze the PDF file: ${fileName}`,
             },
           ],
         },
       ],
-      max_tokens: 800,
-      temperature: 0.1, // Low temperature for consistent categorization
+      temperature: 0.1,
+      max_tokens: 1000,
     });
 
-    // Clean up: delete the uploaded file
+    // Get the response
+    const response = completion.choices[0]?.message?.content;
+
+    if (!response) {
+      throw new Error("OpenAI returned empty response for PDF analysis");
+    }
+
+    console.log("OpenAI PDF analysis response received");
+
+    // Parse the JSON response
+    let result;
     try {
-      await openai.files.del(file.id);
-      console.log(`Cleaned up uploaded file: ${file.id}`);
-    } catch (cleanupError) {
-      console.warn("Failed to cleanup uploaded file:", cleanupError);
+      const cleanedResponse = response.replace(/```json\n?|\n?```/g, "").trim();
+      result = JSON.parse(cleanedResponse);
+    } catch (parseError) {
+      console.error("Failed to parse OpenAI response as JSON:", parseError);
+      console.error("Response content:", response);
+      throw new Error(
+        `OpenAI returned invalid JSON format: ${
+          parseError instanceof Error
+            ? parseError.message
+            : "Unknown parse error"
+        }`
+      );
     }
-
-    const content = response.choices[0]?.message?.content;
-    if (!content) {
-      throw new Error("No response from OpenAI");
-    }
-
-    // Parse JSON response
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error("No valid JSON found in response");
-    }
-
-    const result = JSON.parse(jsonMatch[0]) as AIAnalysisResult;
 
     // Validate and sanitize the result
-    return validateAndSanitizeResult(result);
+    const validatedResult = validateAndSanitizeResult(result);
+
+    if (!validatedResult) {
+      throw new Error(
+        "AI analysis returned invalid or incomplete data structure"
+      );
+    }
+
+    console.log(
+      `PDF analysis completed successfully: ${validatedResult.category}`
+    );
+    return validatedResult;
   } catch (error) {
-    console.error("Error in direct PDF analysis:", error);
+    console.error("Direct PDF analysis failed:", error);
+
+    // Provide more specific error information
+    if (error instanceof Error) {
+      if (
+        error.message.includes("invalid_request_error") ||
+        error.message.includes("unsupported")
+      ) {
+        throw new Error(
+          "OpenAI PDF API does not support this file format or content"
+        );
+      } else if (error.message.includes("rate_limit")) {
+        throw new Error("OpenAI API rate limit exceeded");
+      } else if (error.message.includes("quota")) {
+        throw new Error("OpenAI API quota exceeded");
+      }
+    }
+
     throw error;
+  } finally {
+    // Clean up: delete the uploaded file
+    if (fileId) {
+      try {
+        const openaiClient = new OpenAI({
+          apiKey: process.env.OPENAI_API_KEY,
+        });
+        await openaiClient.files.del(fileId);
+        console.log(`Cleaned up file: ${fileId}`);
+      } catch (cleanupError) {
+        console.warn(`Failed to delete file ${fileId}:`, cleanupError);
+      }
+    }
   }
 }
 
@@ -279,14 +322,53 @@ export async function analyzeDocument(
   fileBuffer: Buffer,
   fileName: string,
   mimeType: string
-) {
+): Promise<AIAnalysisResult> {
   try {
     console.log(`Starting document analysis for: ${fileName} (${mimeType})`);
 
     if (mimeType === "application/pdf") {
-      // Use OpenAI's native PDF support
-      console.log("PDF detected - using OpenAI's native PDF analysis");
-      return await analyzePdfDirectly(fileBuffer, fileName);
+      // Try OpenAI's native PDF support first
+      console.log("PDF detected - attempting OpenAI's native PDF analysis");
+      try {
+        return await analyzePdfDirectly(fileBuffer, fileName);
+      } catch (pdfError) {
+        console.warn(
+          "Native PDF analysis failed, falling back to image conversion:",
+          pdfError
+        );
+
+        // Fallback: Convert PDF to image and analyze
+        try {
+          const imageResult = await convertDocumentToImage(
+            fileBuffer,
+            fileName,
+            mimeType
+          );
+
+          console.log(
+            "PDF converted to image successfully, analyzing with GPT-4o Mini"
+          );
+          const imageBuffer = imageResult as Buffer;
+          return await analyzeImageWithGPT4oMini(imageBuffer);
+        } catch (conversionError) {
+          console.error(
+            "PDF to image conversion also failed:",
+            conversionError
+          );
+          // Return a basic fallback result
+          return {
+            category: "Offentlig dokument",
+            isCustomCategory: false,
+            tags: ["dokument", "pdf", "failed-analysis"],
+            sensitiveData: false,
+            sensitiveDataTags: [],
+            confidence: 0.3,
+            language: "no",
+            description: "PDF-dokument som ikke kunne analyseres automatisk",
+            aiName: "PDF Dokument",
+          };
+        }
+      }
     }
 
     // For non-PDF files, convert to image first
@@ -306,6 +388,22 @@ export async function analyzeDocument(
     // Analyze image with GPT-4o Mini
     return await analyzeImageWithGPT4oMini(imageBuffer);
   } catch (error) {
-    console.warn("Document analysis failed, using fallback:", error);
+    console.error(
+      "Document analysis failed completely, using basic fallback:",
+      error
+    );
+
+    // Final fallback - return a basic categorization
+    return {
+      category: "Offentlig dokument",
+      isCustomCategory: false,
+      tags: ["dokument", "failed-analysis"],
+      sensitiveData: false,
+      sensitiveDataTags: [],
+      confidence: 0.2,
+      language: "no",
+      description: "Dokument som ikke kunne analyseres automatisk",
+      aiName: "Dokument",
+    };
   }
 }
